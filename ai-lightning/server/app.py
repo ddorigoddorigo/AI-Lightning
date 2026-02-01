@@ -118,6 +118,62 @@ def login():
     return jsonify({'access_token': access_token})
 
 
+@app.route('/api/me', methods=['GET'])
+@jwt_required()
+def get_user_profile():
+    """Restituisce informazioni sull'utente corrente incluso il balance."""
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Conta sessioni attive
+    active_sessions = Session.query.filter_by(
+        user_id=user_id, 
+        active=True
+    ).filter(Session.expires_at > datetime.utcnow()).count()
+    
+    return jsonify({
+        'id': user.id,
+        'username': user.username,
+        'balance': user.balance,
+        'balance_btc': user.balance / 100_000_000,
+        'is_admin': user.is_admin,
+        'active_sessions': active_sessions,
+        'created_at': user.created_at.isoformat() if user.created_at else None
+    })
+
+
+@app.route('/api/add_test_balance', methods=['POST'])
+@jwt_required()
+def add_test_balance():
+    """
+    Aggiunge balance di test (solo per development/testnet).
+    In produzione questo endpoint dovrebbe essere disabilitato o protetto.
+    """
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    data = request.get_json() or {}
+    amount = data.get('amount', 10000)  # Default 10000 sats
+    
+    # Limite per evitare abusi
+    if amount > 1000000:  # Max 1M sats per richiesta
+        amount = 1000000
+    
+    user.balance += amount
+    db.session.commit()
+    
+    return jsonify({
+        'message': f'Added {amount} sats to your balance',
+        'new_balance': user.balance
+    })
+
+
 @app.route('/api/models/available', methods=['GET'])
 def get_available_models():
     """

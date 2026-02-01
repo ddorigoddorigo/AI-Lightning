@@ -190,6 +190,85 @@ function showMain() {
     document.getElementById('session-config').style.display = 'none';
     document.getElementById('invoice-section').style.display = 'none';
     document.getElementById('chat-section').style.display = 'none';
+    
+    // Carica info utente incluso balance
+    loadUserProfile();
+}
+
+// ===========================================
+// User Profile & Balance
+// ===========================================
+async function loadUserProfile() {
+    try {
+        const response = await fetch('/api/me', {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (!response.ok) {
+            if (response.status === 401) {
+                // Token scaduto
+                logout();
+                return;
+            }
+            throw new Error('Failed to load profile');
+        }
+        
+        const data = await response.json();
+        
+        // Aggiorna UI
+        document.getElementById('user-info').textContent = `Welcome, ${data.username}!`;
+        updateBalanceDisplay(data.balance);
+        
+    } catch (error) {
+        console.error('Error loading profile:', error);
+    }
+}
+
+function updateBalanceDisplay(balance) {
+    const balanceEl = document.getElementById('balance-amount');
+    if (balanceEl) {
+        balanceEl.textContent = balance.toLocaleString();
+        
+        // Colore in base al balance
+        const container = document.getElementById('user-balance');
+        if (container) {
+            container.classList.remove('low', 'ok', 'good');
+            if (balance < 100) {
+                container.classList.add('low');
+            } else if (balance < 1000) {
+                container.classList.add('ok');
+            } else {
+                container.classList.add('good');
+            }
+        }
+    }
+}
+
+async function addTestBalance() {
+    try {
+        const response = await fetch('/api/add_test_balance', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ amount: 10000 })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to add balance');
+        }
+        
+        showSuccess(data.message);
+        updateBalanceDisplay(data.new_balance);
+        
+    } catch (error) {
+        showError(error.message);
+    }
 }
 
 // ===========================================

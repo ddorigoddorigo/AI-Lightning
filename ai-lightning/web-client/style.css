@@ -147,8 +147,55 @@ header .tagline {
     margin-bottom: 20px;
 }
 
+.user-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.user-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 #user-info {
     color: var(--text-muted);
+}
+
+/* Balance Display */
+.balance-display {
+    background: var(--surface-light);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.95em;
+    transition: all 0.3s;
+}
+
+.balance-display.low {
+    color: var(--error);
+    background: rgba(244, 67, 54, 0.15);
+}
+
+.balance-display.ok {
+    color: var(--warning);
+    background: rgba(255, 152, 0, 0.15);
+}
+
+.balance-display.good {
+    color: var(--success);
+    background: rgba(76, 175, 80, 0.15);
+}
+
+.btn-balance {
+    padding: 6px 10px !important;
+    font-size: 0.85em !important;
+    background: var(--surface-light) !important;
+}
+
+.btn-balance:hover {
+    background: var(--secondary) !important;
 }
 
 /* ===========================================
