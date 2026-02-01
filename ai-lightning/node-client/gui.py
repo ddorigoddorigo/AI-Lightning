@@ -54,7 +54,7 @@ class NodeGUI:
         
         # Server URL
         ttk.Label(self.conn_frame, text="Server URL:").grid(row=0, column=0, sticky='w', padx=10, pady=5)
-        self.server_url = tk.StringVar(value="http://localhost:5000")
+        self.server_url = tk.StringVar(value="http://vps-eecab539.vps.ovh.net")
         ttk.Entry(self.conn_frame, textvariable=self.server_url, width=50).grid(row=0, column=1, padx=10, pady=5)
         
         # Token
@@ -203,11 +203,16 @@ class NodeGUI:
                 self.client = NodeClient(self.config_path)
                 self.client.server_url = self.server_url.get()
                 
+                self.root.after(0, lambda: self.log(f"Tentativo connessione a {self.server_url.get()}..."))
+                
                 if self.client.connect():
                     self.root.after(0, self._on_connected)
                 else:
-                    self.root.after(0, lambda: self._on_connection_failed("Connessione fallita"))
+                    self.root.after(0, lambda: self._on_connection_failed("Connessione fallita - server non raggiungibile"))
             except Exception as e:
+                import traceback
+                err = traceback.format_exc()
+                self.root.after(0, lambda: self.log(f"Errore dettagliato:\n{err}"))
                 self.root.after(0, lambda: self._on_connection_failed(str(e)))
         
         threading.Thread(target=do_connect, daemon=True).start()

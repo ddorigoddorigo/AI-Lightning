@@ -284,7 +284,7 @@ class NodeClient:
         """Connetti al server"""
         try:
             logger.info(f"Connecting to {self.server_url}")
-            self.sio.connect(self.server_url, namespaces=['/node'])
+            self.sio.connect(self.server_url, wait_timeout=10)
             self.running = True
         except Exception as e:
             logger.error(f"Connection failed: {e}")
