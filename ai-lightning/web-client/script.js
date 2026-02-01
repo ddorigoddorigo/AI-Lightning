@@ -199,23 +199,44 @@ function showMain() {
 // User Profile & Balance
 // ===========================================
 async function loadUserProfile() {
+    // Verifica che abbiamo un token
+    if (!authToken) {
+        console.warn('No auth token, skipping profile load');
+        return;
+    }
+    
     try {
+        console.log('Loading profile with token:', authToken.substring(0, 20) + '...');
+        
         const response = await fetch('/api/me', {
             headers: {
                 'Authorization': `Bearer ${authToken}`
             }
         });
         
+        console.log('Profile response status:', response.status);
+        
         if (!response.ok) {
-            if (response.status === 401) {
-                // Token scaduto
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Profile error:', errorData);
+            
+            if (response.status === 401 || response.status === 422) {
+                // Token scaduto/invalido - ma solo se non è un login appena fatto
+                // Controlliamo se il token è stato appena salvato
+                const savedToken = localStorage.getItem('authToken');
+                if (savedToken !== authToken) {
+                    console.warn('Token mismatch, possible race condition');
+                    return;
+                }
+                showError('Session expired. Please login again.');
                 logout();
                 return;
             }
-            throw new Error('Failed to load profile');
+            throw new Error(errorData.error || 'Failed to load profile');
         }
         
         const data = await response.json();
+        console.log('Profile loaded:', data.username);
         
         // Aggiorna UI
         document.getElementById('user-info').textContent = `Welcome, ${data.username}!`;
@@ -223,6 +244,7 @@ async function loadUserProfile() {
         
     } catch (error) {
         console.error('Error loading profile:', error);
+        // Non fare logout su errori di rete
     }
 }
 
