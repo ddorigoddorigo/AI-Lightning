@@ -232,7 +232,16 @@ class NodeClient:
                 if model_info:
                     model_path = model_info.filepath
                     context = model_info.context_length or context
-                    logger.info(f"Found model via ModelManager: {model_path}")
+                    logger.info(f"Found model via ModelManager: path={model_path}, filename={model_info.filename}")
+                    # Verifica che il filepath sia un file, non una directory
+                    if os.path.isdir(model_path):
+                        # Correggi: usa la directory del model_manager + filename
+                        corrected_path = os.path.join(self.model_manager.models_dir, model_info.filename)
+                        logger.warning(f"filepath was a directory, correcting to: {corrected_path}")
+                        model_path = corrected_path
+                else:
+                    logger.warning(f"Model not found in ModelManager: id={model_id}, name={model_name}")
+                    logger.info(f"Available models: {list(self.model_manager.models.keys())}")
             
             # Fallback: cerca per model_id nei modelli sync (senza filepath)
             if not model_path and isinstance(self.models, list):

@@ -497,8 +497,51 @@ function checkPayment() {
     }
     
     console.log('Checking payment for session:', currentSession);
-    showSuccess('Checking payment status...');
+    
+    // Mostra messaggio di attesa con timer
+    showLoadingOverlay('Starting AI model... This may take 1-3 minutes for large models.');
+    
     socket.emit('start_session', {session_id: currentSession});
+}
+
+// Mostra overlay di caricamento con opzione skip
+function showLoadingOverlay(message) {
+    // Rimuovi overlay precedente se esiste
+    hideLoadingOverlay();
+    
+    const overlay = document.createElement('div');
+    overlay.id = 'loading-overlay';
+    overlay.innerHTML = `
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p class="loading-message">${message}</p>
+            <p class="loading-timer">Elapsed: <span id="loading-time">0</span>s</p>
+            <button class="btn btn-secondary" onclick="skipLoading()">Cancel & Go Back</button>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    // Timer
+    let seconds = 0;
+    window.loadingInterval = setInterval(() => {
+        seconds++;
+        const timeEl = document.getElementById('loading-time');
+        if (timeEl) timeEl.textContent = seconds;
+    }, 1000);
+}
+
+function hideLoadingOverlay() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.remove();
+    if (window.loadingInterval) {
+        clearInterval(window.loadingInterval);
+        window.loadingInterval = null;
+    }
+}
+
+function skipLoading() {
+    hideLoadingOverlay();
+    showError('Cancelled. You can try again or choose a smaller model.');
 }
 
 function cancelPayment() {
@@ -554,6 +597,7 @@ function connectSocket() {
     });
 
     socket.on('session_started', (data) => {
+        hideLoadingOverlay();
         const expiresEl = document.getElementById('session-expires');
         if (expiresEl) {
             expiresEl.textContent = `Expires: ${new Date(data.expires_at).toLocaleTimeString()}`;
@@ -563,6 +607,7 @@ function connectSocket() {
     });
     
     socket.on('session_ready', (data) => {
+        hideLoadingOverlay();
         addMessage('System', 'Session ready!');
     });
 
@@ -572,6 +617,7 @@ function connectSocket() {
 
     socket.on('error', (data) => {
         console.error('Socket error:', data);
+        hideLoadingOverlay();
         showError(data.message);
         // Also add to chat if visible
         const chatSection = document.getElementById('chat-section');
