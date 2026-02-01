@@ -25,9 +25,10 @@ class Config:
 
     # Lightning Network
     LND_NETWORK = os.environ.get('LND_NETWORK', 'testnet')  # 'bitcoin' for mainnet
-    LND_DIR = os.environ.get('LND_DIR', '~/.lnd')
-    LND_CERT_FILE = os.path.join(LND_DIR, 'tls.cert')
-    LND_MACAROON_FILE = os.path.join(LND_DIR, 'data/chain/bitcoin', LND_NETWORK, 'admin.macaroon')
+    LND_DIR = os.environ.get('LND_DIR', '/home/ubuntu/.lnd')  # Path assoluto per il server
+    LND_REST_HOST = os.environ.get('LND_REST_HOST', 'https://localhost:8080')
+    LND_CERT_PATH = os.path.join(LND_DIR, 'tls.cert')
+    LND_MACAROON_PATH = os.path.join(LND_DIR, 'data/chain/bitcoin', LND_NETWORK, 'admin.macaroon')
 
     # LLM Models
     AVAILABLE_MODELS = {
