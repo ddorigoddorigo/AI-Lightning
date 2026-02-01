@@ -15,7 +15,7 @@ class SocketClient:
 
     async def connect(self, server_url, token):
         """Connetti al server."""
-        self.sio.connect(
+        await self.sio.connect(
             server_url,
             headers={'Authorization': f'Bearer {token}'}
         )

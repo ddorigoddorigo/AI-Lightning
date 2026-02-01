@@ -6,17 +6,32 @@ Usa pyln-client per comunicare con lnd.
 from pyln.client import Client
 from pyln import Millisatoshi
 import os
-from flask import current_app
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LightningManager:
-    def __init__(self):
-        """Inizializza connessione con lnd."""
-        self.ln = Client(
-            network=current_app.config['LND_NETWORK'],
-            lnd_dir=os.path.expanduser(current_app.config['LND_DIR']),
-            cert_file=os.path.expanduser(current_app.config['LND_CERT_FILE']),
-            macaroon_file=os.path.expanduser(current_app.config['LND_MACAROON_FILE'])
-        )
+    def __init__(self, config):
+        """
+        Inizializza connessione con lnd.
+        
+        Args:
+            config: Flask config object or dict with LND settings
+        """
+        self.config = config
+        self._client = None
+    
+    @property
+    def ln(self):
+        """Lazy initialization of Lightning client."""
+        if self._client is None:
+            self._client = Client(
+                network=self.config.get('LND_NETWORK', 'testnet'),
+                lnd_dir=os.path.expanduser(self.config.get('LND_DIR', '~/.lnd')),
+                cert_file=os.path.expanduser(self.config.get('LND_CERT_FILE', '')),
+                macaroon_file=os.path.expanduser(self.config.get('LND_MACAROON_FILE', ''))
+            )
+        return self._client
 
     def create_invoice(self, amount_sat, memo):
         """
@@ -54,9 +69,26 @@ class LightningManager:
             invoice = self.ln.lookup_invoice(r_hash)
             return invoice.is_paid
         except Exception as e:
-            current_app.logger.error(f"Error checking payment: {e}")
+            logger.error(f"Error checking payment: {e}")
             return False
 
     def get_invoice(self, r_hash):
         """Recupera dettagli di una fattura."""
         return self.ln.lookup_invoice(r_hash)
+    
+    def pay_invoice(self, payment_request):
+        """
+        Paga una fattura Lightning.
+        
+        Args:
+            payment_request: BOLT11 invoice string
+            
+        Returns:
+            dict: Payment result
+        """
+        try:
+            result = self.ln.pay(payment_request)
+            return {'success': True, 'preimage': result.payment_preimage.hex()}
+        except Exception as e:
+            logger.error(f"Error paying invoice: {e}")
+            return {'success': False, 'error': str(e)}

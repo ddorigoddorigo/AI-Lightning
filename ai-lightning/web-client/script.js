@@ -90,10 +90,13 @@ function connect(url) {
     });
 
     socket.on('session_started', (data) => {
-        currentSession = data.session_id;
-        localStorage.setItem('sessionId', currentSession);
+        // currentSession è già impostato da createSession()
         document.getElementById('invoice-section').style.display = 'none';
-        addMessage('System', `Session started! Expires at ${new Date(data.expires_at).toLocaleString()}`);
+        addMessage('System', `Session started on node ${data.node_id}! Expires at ${new Date(data.expires_at).toLocaleString()}`);
+        
+        // Abilita l'input
+        document.getElementById('prompt').disabled = false;
+        document.getElementById('send-btn').disabled = false;
     });
 
     socket.on('ai_response', (data) => {
@@ -102,6 +105,8 @@ function connect(url) {
 
     socket.on('error', (data) => {
         addMessage('System', `Error: ${data.message}`);
+        // Riabilita input in caso di errore
+        enableInput();
     });
 
     socket.on('disconnect', () => {
@@ -151,23 +156,101 @@ function checkPayment() {
 }
 
 // Chat
+let isWaitingForResponse = false;
+
 function sendMessage() {
-    const prompt = document.getElementById('prompt').value;
-    if (!prompt.trim() || !currentSession) return;
+    const promptInput = document.getElementById('prompt');
+    const prompt = promptInput.value.trim();
+    
+    if (!prompt || !currentSession || isWaitingForResponse) return;
 
     addMessage('You', prompt);
-    document.getElementById('prompt').value = '';
+    promptInput.value = '';
+    
+    // Disabilita input mentre aspetta la risposta
+    isWaitingForResponse = true;
+    promptInput.disabled = true;
+    document.getElementById('send-btn').disabled = true;
+    
+    // Aggiungi indicatore di caricamento
+    const loadingId = addLoadingIndicator();
 
     socket.emit('chat_message', {
         session_id: currentSession,
-        prompt: prompt
+        prompt: prompt,
+        max_tokens: 512,
+        temperature: 0.7
     });
+    
+    // Timeout di sicurezza
+    setTimeout(() => {
+        if (isWaitingForResponse) {
+            removeLoadingIndicator(loadingId);
+            enableInput();
+        }
+    }, 180000); // 3 minuti
+}
+
+function enableInput() {
+    isWaitingForResponse = false;
+    document.getElementById('prompt').disabled = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('prompt').focus();
+}
+
+function addLoadingIndicator() {
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'message ai loading';
+    loadingDiv.id = 'loading-' + Date.now();
+    loadingDiv.innerHTML = 'AI: <span class="typing-indicator">...</span>';
+    document.getElementById('chat').appendChild(loadingDiv);
+    document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+    return loadingDiv.id;
+}
+
+function removeLoadingIndicator(id) {
+    const loading = document.getElementById(id);
+    if (loading) {
+        loading.remove();
+    }
 }
 
 function addMessage(sender, text) {
+    // Rimuovi eventuali indicatori di caricamento
+    const loadings = document.querySelectorAll('.message.loading');
+    loadings.forEach(el => el.remove());
+    
+    // Se è una risposta AI, riabilita input
+    if (sender === 'AI') {
+        enableInput();
+    }
+    
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender.toLowerCase()}`;
-    messageDiv.textContent = `${sender}: ${text}`;
+    
+    // Formatta il testo (supporto markdown base)
+    const formattedText = formatMessage(text);
+    messageDiv.innerHTML = `<strong>${sender}:</strong> ${formattedText}`;
+    
     document.getElementById('chat').appendChild(messageDiv);
     document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+}
+
+function formatMessage(text) {
+    // Escape HTML
+    text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Code blocks
+    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>');
+    
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Newlines
+    text = text.replace(/\n/g, '<br>');
+    
+    return text;
 }

@@ -1,0 +1,41 @@
+# AI Lightning Node Configuration
+# Copy this file to config.ini and modify as needed
+
+[Server]
+# URL of the main AI Lightning server
+URL = http://localhost:5000
+
+[Node]
+# Node ID (will be set automatically after registration)
+# id = node-xxxxxxxx
+
+# IP address to bind to (0.0.0.0 for all interfaces)
+address = 0.0.0.0
+
+# Port for the node API server
+port = 9000
+
+[LLM]
+# Path to llama.cpp executable (llama-server or main with --server)
+bin = /path/to/llama.cpp/build/bin/llama-server
+
+# Port range for llama.cpp server instances
+port_start = 11000
+port_end = 12000
+
+# Example model configurations:
+# Add one section for each model you want to offer
+
+[Model:tiny]
+# Path to the model file
+path = /path/to/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+# Context size in tokens
+context = 2048
+
+[Model:base]
+path = /path/to/models/llama-2-7b-chat.Q4_K_M.gguf
+context = 4096
+
+[Model:large]
+path = /path/to/models/llama-2-13b-chat.Q4_K_M.gguf
+context = 8192

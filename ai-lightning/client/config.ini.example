@@ -1,0 +1,24 @@
+# AI Lightning Client Configuration
+# Copy this file to config.ini and modify as needed
+
+[Server]
+# URL of the AI Lightning server
+URL = http://localhost:5000
+
+[UI]
+# Theme: arc, breeze, equilux, radiance, etc. (requires ttkthemes)
+Theme = arc
+
+# Font family
+Font = Segoe UI
+
+# Window size
+Width = 800
+Height = 600
+
+[Session]
+# Default model
+DefaultModel = base
+
+# Default session duration in minutes
+DefaultMinutes = 5

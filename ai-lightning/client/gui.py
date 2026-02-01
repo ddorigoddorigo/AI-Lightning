@@ -42,7 +42,7 @@ class GUI:
         self.username_entry = ttk.Entry(self.login_frame)
         self.username_entry.pack(fill=tk.X, padx=20, pady=5)
         ttk.Label(self.login_frame, text="Password").pack()
-        self.password_entry = ttt.Entry(self.login_frame, show='*')
+        self.password_entry = ttk.Entry(self.login_frame, show='*')
         self.password_entry.pack(fill=tk.X, padx=20, pady=5)
         ttk.Button(self.login_frame, text="Login", command=self.login).pack(pady=10)
         ttk.Button(self.login_frame, text="Register", command=self.register).pack(pady=5)

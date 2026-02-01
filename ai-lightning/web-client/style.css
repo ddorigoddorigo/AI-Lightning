@@ -123,3 +123,66 @@ button {
     white-space: pre-wrap;
     word-break: break-all;
 }
+
+/* Loading indicator */
+.message.loading {
+    opacity: 0.7;
+}
+
+.typing-indicator {
+    display: inline-block;
+    animation: typing 1.4s infinite;
+}
+
+@keyframes typing {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 1; }
+}
+
+/* Code formatting */
+.message code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.message pre {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 10px;
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.message pre code {
+    background: none;
+    padding: 0;
+}
+
+/* Disabled state */
+#prompt:disabled, button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Message types */
+.message.you {
+    background: #3a3a52;
+    margin-left: 20%;
+    border-bottom-right-radius: 0;
+}
+
+.message.ai {
+    background: var(--primary);
+    color: #1a1a2e;
+    margin-right: 20%;
+    border-bottom-left-radius: 0;
+}
+
+.message.system {
+    background: transparent;
+    color: #888;
+    text-align: center;
+    font-size: 0.9em;
+    max-width: 100%;
+}

@@ -54,7 +54,7 @@ class Session(db.Model):
     def __repr__(self):
         return f'<Session {self.id} for {self.user.username}>'
 
-class Node(db.model):
+class Node(db.Model):
     """Nodo host registrato."""
     __tablename__ = 'nodes'
 
