@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import httpx
 import click
 import logging
+import json
 
 # Configurazione logging
 logging.basicConfig(
@@ -243,14 +244,45 @@ def start_session(data):
         emit('error', {'message': 'Session expired'})
         return
 
-    # Trova un nodo disponibile
+    # Prima cerca un nodo WebSocket disponibile (dietro NAT)
+    ws_node_id, ws_sid = get_websocket_node(session.model)
+    
+    if ws_node_id:
+        # Usa nodo WebSocket
+        try:
+            session.node_id = ws_node_id
+            session.active = True
+            db.session.commit()
+            
+            # Invia richiesta al nodo
+            socketio.emit('start_session', {
+                'session_id': session.id,
+                'model': session.model,
+                'context': Config.AVAILABLE_MODELS[session.model]['context']
+            }, room=f"node_{ws_node_id}")
+            
+            join_room(session.id)
+            emit('session_started', {
+                'session_id': session.id,
+                'node_id': ws_node_id,
+                'expires_at': session.expires_at.isoformat()
+            })
+            
+            logger.info(f"Session {session.id} started on WebSocket node {ws_node_id}")
+            return
+            
+        except Exception as e:
+            current_app.logger.error(f"Failed to start session on WS node: {e}")
+            # Prova con nodo HTTP
+
+    # Fallback: cerca nodo HTTP tradizionale
     nm = get_node_manager()
     node = nm.get_available_node(session.model)
     if not node:
         emit('error', {'message': 'No available nodes'})
         return
 
-    # Avvia sessione sul nodo
+    # Avvia sessione sul nodo HTTP
     try:
         node_id_str = node[b'id'].decode() if isinstance(node[b'id'], bytes) else node[b'id']
         node_info = nm.start_remote_session(
@@ -297,7 +329,19 @@ def handle_message(data):
         emit('error', {'message': 'Invalid session'})
         return
 
-    # Inoltra al nodo
+    # Verifica se il nodo è connesso via WebSocket
+    if session.node_id in connected_nodes:
+        # Inoltra al nodo WebSocket
+        socketio.emit('inference_request', {
+            'session_id': session.id,
+            'prompt': data['prompt'],
+            'max_tokens': data.get('max_tokens', 256),
+            'temperature': data.get('temperature', 0.7),
+            'stop': data.get('stop', [])
+        }, room=f"node_{session.node_id}")
+        return
+
+    # Altrimenti usa HTTP (nodo tradizionale)
     nm = get_node_manager()
     if not nm.check_node_status(session.node_id):
         emit('error', {'message': 'Node not available'})
@@ -410,6 +454,148 @@ def node_heartbeat():
         nm.redis.hset(f"node:{node_id}", 'load', data['load'])
     
     return jsonify({'status': 'ok'})
+
+
+# ============================================
+# WebSocket handlers per nodi dietro NAT
+# ============================================
+
+# Dizionario per mappare node_id -> socket_id
+connected_nodes = {}  # node_id -> {'sid': socket_id, 'models': [...]}
+pending_requests = {}  # request_id -> {'session_id': ..., 'user_sid': ...}
+
+
+@socketio.on('node_register')
+def handle_node_register(data):
+    """Registra un nodo connesso via WebSocket."""
+    token = data.get('token', '')
+    models = data.get('models', [])
+    
+    # Genera o valida node_id
+    node_id = None
+    if token:
+        # Cerca nodo esistente con questo token
+        nm = get_node_manager()
+        for nid in nm.redis.smembers(nm.nodes_set_key):
+            nid_str = nid.decode() if isinstance(nid, bytes) else nid
+            node_data = nm.redis.hgetall(f"node:{nid_str}")
+            if node_data.get(b'token', b'').decode() == token:
+                node_id = nid_str
+                break
+    
+    if not node_id:
+        # Nuovo nodo
+        import uuid
+        node_id = f"node-ws-{uuid.uuid4().hex[:8]}"
+        token = uuid.uuid4().hex
+        
+        nm = get_node_manager()
+        nm.redis.hset(f"node:{node_id}", mapping={
+            'id': node_id,
+            'token': token,
+            'models': json.dumps(models) if models else '[]',
+            'status': 'online',
+            'type': 'websocket',
+            'last_ping': datetime.utcnow().timestamp(),
+            'load': 0
+        })
+        nm.redis.sadd(nm.nodes_set_key, node_id)
+    else:
+        # Aggiorna nodo esistente
+        nm = get_node_manager()
+        nm.redis.hset(f"node:{node_id}", mapping={
+            'status': 'online',
+            'last_ping': datetime.utcnow().timestamp(),
+            'models': json.dumps(models) if models else nm.redis.hget(f"node:{node_id}", 'models')
+        })
+    
+    # Registra nella mappa connessioni
+    connected_nodes[node_id] = {
+        'sid': request.sid,
+        'models': models
+    }
+    
+    join_room(f"node_{node_id}")
+    
+    logger.info(f"Node {node_id} registered via WebSocket (sid: {request.sid})")
+    
+    emit('node_registered', {
+        'node_id': node_id,
+        'token': token
+    })
+
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Gestione disconnessione - aggiornata per nodi."""
+    # Rimuovi nodo dalla mappa se era connesso
+    for node_id, info in list(connected_nodes.items()):
+        if info['sid'] == request.sid:
+            del connected_nodes[node_id]
+            
+            # Marca nodo offline
+            nm = get_node_manager()
+            nm.redis.hset(f"node:{node_id}", 'status', 'offline')
+            
+            logger.info(f"Node {node_id} disconnected")
+            break
+    
+    if Config.DEBUG:
+        current_app.logger.info(f'Client disconnected: {request.sid}')
+
+
+@socketio.on('session_started')
+def handle_node_session_started(data):
+    """Nodo conferma che la sessione è partita."""
+    session_id = str(data['session_id'])
+    
+    logger.info(f"Node confirms session {session_id} started")
+    
+    # Notifica il client utente
+    emit('session_ready', {'session_id': session_id}, room=session_id)
+
+
+@socketio.on('session_error')
+def handle_node_session_error(data):
+    """Nodo riporta errore nell'avvio sessione."""
+    session_id = str(data['session_id'])
+    error = data.get('error', 'Unknown error')
+    
+    logger.error(f"Node error for session {session_id}: {error}")
+    
+    emit('error', {'message': f'Node error: {error}'}, room=session_id)
+
+
+@socketio.on('inference_response')
+def handle_inference_response(data):
+    """Nodo invia risposta inferenza."""
+    session_id = str(data['session_id'])
+    content = data.get('content', '')
+    
+    emit('ai_response', {
+        'response': content,
+        'session_id': session_id
+    }, room=session_id)
+
+
+@socketio.on('inference_error')
+def handle_inference_error(data):
+    """Nodo riporta errore inferenza."""
+    session_id = str(data['session_id'])
+    error = data.get('error', 'Unknown error')
+    
+    emit('error', {'message': f'Inference error: {error}'}, room=session_id)
+
+
+def get_websocket_node(model):
+    """Trova un nodo WebSocket disponibile per il modello."""
+    for node_id, info in connected_nodes.items():
+        if model in info.get('models', []):
+            return node_id, info['sid']
+    return None, None
+
+
+# ============================================
 
 
 # Background job per cleanup sessioni scadute
