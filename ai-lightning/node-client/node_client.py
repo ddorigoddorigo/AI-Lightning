@@ -71,22 +71,28 @@ class LlamaProcess:
             startupinfo=startupinfo
         )
         
-        # Attendi che sia pronto
-        for i in range(60):
+        # Attendi che sia pronto - timeout 180 secondi per modelli grandi
+        logger.info(f"Waiting for llama.cpp to load model (this may take a few minutes)...")
+        for i in range(180):
             try:
-                r = httpx.get(f"http://127.0.0.1:{self.port}/health", timeout=1)
+                r = httpx.get(f"http://127.0.0.1:{self.port}/health", timeout=2)
                 if r.status_code == 200:
-                    logger.info(f"llama.cpp ready on port {self.port}")
+                    logger.info(f"llama.cpp ready on port {self.port} after {i+1} seconds")
                     return True
             except:
                 pass
+            
+            # Log progress ogni 30 secondi
+            if (i + 1) % 30 == 0:
+                logger.info(f"Still loading model... ({i+1}s elapsed)")
+            
             time.sleep(1)
             if self.process.poll() is not None:
                 stderr = self.process.stderr.read().decode()
                 logger.error(f"llama.cpp crashed: {stderr}")
                 return False
         
-        logger.error("llama.cpp failed to start in time")
+        logger.error("llama.cpp failed to start in 180 seconds")
         self.stop()
         return False
     
