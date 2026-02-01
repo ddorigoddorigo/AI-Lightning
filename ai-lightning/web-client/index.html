@@ -3,52 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Lightning</title>
+    <title>AI Lightning ⚡</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
+        <header id="header">
+            <h1>⚡ AI Lightning</h1>
+            <p class="tagline">Decentralized AI powered by Lightning Network</p>
+            <div id="network-status">
+                <span class="status-dot"></span>
+                <span id="nodes-count">Loading...</span>
+            </div>
+        </header>
+
+        <!-- Auth Section -->
         <div id="auth-section">
-            <div id="login-form">
-                <h1>AI Lightning</h1>
-                <input type="text" id="username" placeholder="Username">
-                <input type="password" id="password" placeholder="Password">
+            <div id="login-form" class="auth-form">
+                <h2>Login</h2>
+                <input type="text" id="username" placeholder="Username" autocomplete="username">
+                <input type="password" id="password" placeholder="Password" autocomplete="current-password">
                 <button onclick="login()">Login</button>
                 <p>No account? <a href="#" onclick="showRegister()">Register</a></p>
             </div>
-            <div id="register-form" style="display: none;">
-                <h1>AI Lightning</h1>
-                <input type="text" id="reg-username" placeholder="Username">
-                <input type="password" id="reg-password" placeholder="Password">
+            <div id="register-form" class="auth-form" style="display: none;">
+                <h2>Register</h2>
+                <input type="text" id="reg-username" placeholder="Username" autocomplete="username">
+                <input type="password" id="reg-password" placeholder="Password (min 8 chars)" autocomplete="new-password">
                 <button onclick="register()">Register</button>
+                <p>Have an account? <a href="#" onclick="showLoginForm()">Login</a></p>
             </div>
         </div>
 
+        <!-- Main Section -->
         <div id="main-section" style="display: none;">
-            <div class="model-selector">
-                <div class="model-option selected" data-model="base" onclick="selectModel('base')">🦜 Base</div>
-                <div class="model-option" data-model="tiny" onclick="selectModel('tiny')">🐇 Tiny</div>
-                <div class="model-option" data-model="large" onclick="selectModel('large')">🦅 Large</div>
-                <div class="duration">
-                    <label for="minutes">Duration:</label>
+            <!-- User Info Bar -->
+            <div id="user-bar">
+                <span id="user-info">Welcome!</span>
+                <button onclick="logout()" class="btn-small">Logout</button>
+            </div>
+
+            <!-- Models Section -->
+            <div id="models-section">
+                <h3>🧠 Available Models</h3>
+                <div id="models-loading" class="loading-spinner">Loading models from network...</div>
+                <div id="models-grid"></div>
+                <button onclick="refreshModels()" class="btn-refresh">🔄 Refresh</button>
+            </div>
+
+            <!-- Session Config -->
+            <div id="session-config" style="display: none;">
+                <h3>⚙️ Session Configuration</h3>
+                <div class="config-row">
+                    <label>Selected Model:</label>
+                    <span id="selected-model-name">-</span>
+                </div>
+                <div class="config-row">
+                    <label for="minutes">Duration (minutes):</label>
                     <input type="number" id="minutes" value="5" min="1" max="120">
                 </div>
-                <button onclick="createSession()">Buy Session</button>
+                <div class="config-row">
+                    <label>Estimated Cost:</label>
+                    <span id="estimated-cost">-</span>
+                </div>
+                <button onclick="createSession()" class="btn-primary">⚡ Buy Session</button>
+                <button onclick="cancelModelSelection()" class="btn-secondary">Cancel</button>
             </div>
 
-            <div id="invoice-section">
-                <p>Pay this Lightning invoice:</p>
-                <pre id="invoice"></pre>
-                <button onclick="checkPayment()" style="display: none;">I've paid</button>
+            <!-- Invoice Section -->
+            <div id="invoice-section" style="display: none;">
+                <h3>💳 Payment Required</h3>
+                <p>Pay this Lightning invoice to start your session:</p>
+                <div id="invoice-container">
+                    <pre id="invoice"></pre>
+                    <button onclick="copyInvoice()" class="btn-small">📋 Copy</button>
+                </div>
+                <p class="invoice-amount">Amount: <span id="invoice-amount">-</span> sats</p>
+                <button onclick="checkPayment()" class="btn-primary">✓ I've Paid</button>
+                <button onclick="cancelPayment()" class="btn-secondary">Cancel</button>
             </div>
 
-            <div class="chat-container" id="chat">
-                <div class="message system">Ready! Buy a session to start chatting.</div>
+            <!-- Chat Section -->
+            <div id="chat-section" style="display: none;">
+                <div id="session-info">
+                    <span id="session-model">-</span>
+                    <span id="session-expires">-</span>
+                    <button onclick="endSession()" class="btn-small btn-danger">End Session</button>
+                </div>
+                
+                <div class="chat-container" id="chat">
+                    <div class="message system">Session ready! Start chatting.</div>
+                </div>
+
+                <div class="input-area">
+                    <input type="text" id="prompt" placeholder="Type your message..." disabled
+                           onkeypress="if(event.key=='Enter') sendMessage()">
+                    <button id="send-btn" onclick="sendMessage()" disabled>Send</button>
+                </div>
             </div>
 
-            <div class="input-area">
-                <input type="text" id="prompt" placeholder="Type your message..." onkeypress="if(event.key=='Enter') sendMessage()">
-                <button id="send-btn" onclick="sendMessage()">Send</button>
+            <!-- Network Info Panel -->
+            <div id="network-panel">
+                <h3>📊 Network Status</h3>
+                <div id="network-info">
+                    <div class="info-item">
+                        <span class="label">Online Nodes:</span>
+                        <span id="total-nodes">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Available Models:</span>
+                        <span id="total-models">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Total VRAM:</span>
+                        <span id="total-vram">0 GB</span>
+                    </div>
+                </div>
+                <button onclick="showNodesInfo()" class="btn-small">View Nodes</button>
+            </div>
+        </div>
+
+        <!-- Nodes Modal -->
+        <div id="nodes-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close" onclick="closeNodesModal()">&times;</span>
+                <h3>🖥️ Online Nodes</h3>
+                <div id="nodes-list"></div>
             </div>
         </div>
     </div>
