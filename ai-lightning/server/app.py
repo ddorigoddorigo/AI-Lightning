@@ -324,74 +324,97 @@ def get_online_nodes():
 @validate_model_param
 def new_session():
     """Crea una nuova sessione."""
-    user_id = get_jwt_identity()
-    data = request.get_json()
-    model_requested = data['model']
-
-    # Verifica che ci sia almeno un nodo con questo modello
-    node_with_model = None
-    model_price = None
-    
-    for node_id, info in connected_nodes.items():
-        node_models = info.get('models', [])
+    try:
+        user_id = get_jwt_identity()
         
-        # I modelli possono essere una lista di oggetti o una lista di stringhe
-        for model in node_models:
-            model_id = None
-            found_price = None
+        # Converti user_id a int
+        try:
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid token'}), 401
             
-            if isinstance(model, dict):
-                # Nuovo formato: {id, name, path, ...}
-                model_id = model.get('id') or model.get('name')
-                found_price = model.get('price_per_minute')
-            else:
-                # Vecchio formato: stringa
-                model_id = str(model)
+        data = request.get_json()
+        model_requested = data['model']
+        
+        logger.info(f"New session request: user={user_id}, model={model_requested}")
+
+        # Verifica che ci sia almeno un nodo con questo modello
+        node_with_model = None
+        model_price = None
+        
+        for node_id, info in connected_nodes.items():
+            node_models = info.get('models', [])
             
-            if model_id == model_requested:
-                node_with_model = node_id
-                model_price = found_price
+            # I modelli possono essere una lista di oggetti o una lista di stringhe
+            for model in node_models:
+                model_id = None
+                found_price = None
+                
+                if isinstance(model, dict):
+                    # Nuovo formato: {id, name, path, ...}
+                    model_id = model.get('id') or model.get('name')
+                    found_price = model.get('price_per_minute')
+                else:
+                    # Vecchio formato: stringa
+                    model_id = str(model)
+                
+                if model_id == model_requested:
+                    node_with_model = node_id
+                    model_price = found_price
+                    break
+            
+            if node_with_model:
                 break
         
-        if node_with_model:
-            break
-    
-    if not node_with_model:
-        return jsonify({'error': f'No node available with model: {model_requested}'}), 404
+        if not node_with_model:
+            logger.warning(f"No node with model {model_requested}")
+            return jsonify({'error': f'No node available with model: {model_requested}'}), 404
 
-    # Valida minuti
-    try:
-        minutes = int(data['minutes'])
-    except (ValueError, TypeError):
-        return jsonify({'error': 'Minutes must be a number'}), 400
-    
-    if minutes < 1 or minutes > 120:
-        return jsonify({'error': 'Minutes must be between 1 and 120'}), 400
+        # Valida minuti
+        try:
+            minutes = int(data['minutes'])
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Minutes must be a number'}), 400
+        
+        if minutes < 1 or minutes > 120:
+            return jsonify({'error': 'Minutes must be between 1 and 120'}), 400
 
-    # Crea fattura (usa prezzo dal nodo se disponibile)
-    amount = get_model_price(model_requested, model_price) * minutes
-    invoice = get_lightning_manager().create_invoice(
-        amount,
-        f"AI access: {model_requested} for {minutes} minutes"
-    )
+        # Crea fattura (usa prezzo dal nodo se disponibile)
+        amount = get_model_price(model_requested, model_price) * minutes
+        
+        try:
+            invoice = get_lightning_manager().create_invoice(
+                amount,
+                f"AI access: {model_requested} for {minutes} minutes"
+            )
+        except Exception as e:
+            logger.error(f"Lightning invoice creation failed: {e}")
+            return jsonify({'error': 'Lightning Network unavailable. Please try again later.'}), 503
 
-    # Crea sessione nel DB (pending payment)
-    session = Session(
-        user_id=user_id,
-        node_id='pending',
-        model=model_requested,
-        payment_hash=invoice['r_hash'],
-        expires_at=datetime.utcnow() + timedelta(minutes=minutes)
-    )
-    db.session.add(session)
-    db.session.commit()
+        # Crea sessione nel DB (pending payment)
+        session = Session(
+            user_id=user_id,
+            node_id='pending',
+            model=model_requested,
+            payment_hash=invoice['r_hash'],
+            expires_at=datetime.utcnow() + timedelta(minutes=minutes)
+        )
+        db.session.add(session)
+        db.session.commit()
+        
+        logger.info(f"Session {session.id} created, invoice amount: {amount} sats")
 
-    return jsonify({
-        'invoice': invoice['payment_request'],
-        'session_id': session.id,
-        'amount': invoice['amount'],
-        'expires_at': session.expires_at.isoformat()
-    })
+        return jsonify({
+            'invoice': invoice['payment_request'],
+            'session_id': session.id,
+            'amount': invoice['amount'],
+            'expires_at': session.expires_at.isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
+        db.session.rollback()
+        return jsonify({'error': 'Failed to create session'}), 500
 
 @app.route('/api/register_node', methods=['POST'])
 @jwt_required()
