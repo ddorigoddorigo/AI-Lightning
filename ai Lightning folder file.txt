@@ -1,0 +1,61 @@
+ai Lightning
+
+ai-lightning/
+├── README.md                    # Documentazione principale
+├── LICENSE                      # Licenza
+├── .gitignore                   # File ignorati da git
+│
+├── server/                      # Server Principale
+│   ├── __init__.py              # Package init 		
+│   ├── config.py                # Configurazione
+│   ├── app.py                   # Applicazione Flask
+│   ├── models.py                # Modelli database
+│   ├── lightning.py             # Lightning Network
+│   ├── nodemanager.py           # Gestione nodi
+│   ├── utils/                   # Utilities
+│   │   ├── __init__.py          # Package init 				
+│   │   ├── helpers.py           # Funzioni utility 				
+│   │   └── decorators.py        # Decoratori 				
+│   └── requirements.txt         # Dipendenze Python
+│
+├── node/                        # Nodi Host
+│   ├── __init__.py              # Package init 				
+│   ├── node_server.py           # Server del nodo
+│   ├── node_config.py           # Configurazione nodo
+│   └── requirements.txt         # Dipendenze Python
+│
+├── client/                      # Client Desktop (Windows)
+│   ├── __init__.py              # Package init 				
+│   ├── app.py                   # Applicazione principale
+│   ├── gui.py                   # Interfaccia utente
+│   ├── socket_client.py         # Socket.IO client
+│   └── requirements.txt         # Dipendenze Python
+│
+├── web-client/                  # Client Web
+│   ├── index.html               # Pagina principale
+│   ├── style.css                # Stili CSS
+│   └── script.js                # Logica JavaScript
+│
+├── scripts/                     # Script utili
+│   ├── setup_server.py          # Setup server
+│   ├── setup_node.py            # Setup nodo
+│   └── create_admin.py          # Crea utente admin  				
+│
+├── tests/                       # Test
+│   ├── server/                  # Test server
+│   │   ├── test_api.py          # Test API 				
+│   │   └── test_models.py       # Test modelli 				
+│   └── node/                    # Test nodi
+│       └── test_node_server.py  # Test nodo 				
+│
+├── docs/                        # Documentazione
+│   ├── architecture.md          # Architettura
+│   ├── api.md                   # API documentation 				
+│   └── deployment.md            # Istruzioni deployment 				
+│
+└── docker/                      # Configurazione Docker
+    ├── server/                  # Server
+    │   ├── Dockerfile           # Dockerfile
+    │   └── entrypoint.sh        # Entry point 				
+    └── node/                    # Nodi
+        └── Dockerfile           # Dockerfile
