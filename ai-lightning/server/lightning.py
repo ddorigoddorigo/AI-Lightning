@@ -1,98 +1,98 @@
 """
-Interfaccia con Lightning Network tramite LND.
+Interfaccia con Lightning Network tramite LND REST API.
 
-Usa gRPC per comunicare con LND (compatibile con Neutrino).
+Usa l'API REST invece di gRPC per evitare problemi di compatibilità protobuf.
 """
-import codecs
 import os
+import base64
 import logging
-import grpc
+import requests
+import urllib3
+
+# Disabilita warning SSL per certificati self-signed
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
-
-# I proto compilati verranno importati dopo l'installazione
-lightning_pb2 = None
-lightning_pb2_grpc = None
-invoices_pb2 = None
-invoices_pb2_grpc = None
-
-
-def _load_grpc_modules():
-    """Carica i moduli gRPC di LND."""
-    global lightning_pb2, lightning_pb2_grpc, invoices_pb2, invoices_pb2_grpc
-    if lightning_pb2 is None:
-        try:
-            from lndgrpc import lightning_pb2 as lnpb2
-            from lndgrpc import lightning_pb2_grpc as lnpb2_grpc
-            from lndgrpc import invoices_pb2 as invpb2
-            from lndgrpc import invoices_pb2_grpc as invpb2_grpc
-            lightning_pb2 = lnpb2
-            lightning_pb2_grpc = lnpb2_grpc
-            invoices_pb2 = invpb2
-            invoices_pb2_grpc = invpb2_grpc
-        except ImportError:
-            # Fallback: prova a importare direttamente
-            import lightning_pb2 as lnpb2
-            import lightning_pb2_grpc as lnpb2_grpc
-            lightning_pb2 = lnpb2
-            lightning_pb2_grpc = lnpb2_grpc
 
 
 class LightningManager:
     def __init__(self, config):
         """
-        Inizializza connessione con LND.
+        Inizializza connessione con LND via REST API.
         
         Args:
             config: Flask config object or dict with LND settings
         """
         self.config = config
-        self._stub = None
-        self._channel = None
+        self._macaroon = None
+        self._cert_path = None
+        self._base_url = None
+        self._setup_connection()
         
-    def _get_credentials(self):
-        """Carica certificato TLS e macaroon."""
-        # Leggi certificato TLS
-        cert_path = os.path.expanduser(
+    def _setup_connection(self):
+        """Configura i parametri di connessione."""
+        # URL REST di LND (default porta 8080)
+        lnd_rest_host = self.config.get('LND_REST_HOST', 'https://localhost:8080')
+        self._base_url = lnd_rest_host.rstrip('/')
+        
+        # Percorso certificato TLS
+        self._cert_path = os.path.expanduser(
             self.config.get('LND_CERT_PATH', '~/.lnd/tls.cert')
         )
-        with open(cert_path, 'rb') as f:
-            cert = f.read()
         
-        # Leggi macaroon
+        # Leggi macaroon e converti in hex
+        network = self.config.get('LND_NETWORK', 'testnet')
         macaroon_path = os.path.expanduser(
-            self.config.get('LND_MACAROON_PATH', '~/.lnd/data/chain/bitcoin/mainnet/admin.macaroon')
+            self.config.get('LND_MACAROON_PATH', f'~/.lnd/data/chain/bitcoin/{network}/admin.macaroon')
         )
-        with open(macaroon_path, 'rb') as f:
-            macaroon_bytes = f.read()
-        macaroon = codecs.encode(macaroon_bytes, 'hex')
         
-        return cert, macaroon
+        try:
+            with open(macaroon_path, 'rb') as f:
+                self._macaroon = f.read().hex()
+            logger.info(f"LND REST API configured: {self._base_url}")
+        except FileNotFoundError:
+            logger.warning(f"Macaroon not found at {macaroon_path}")
+            self._macaroon = None
     
-    def _get_stub(self):
-        """Ottiene lo stub gRPC con lazy initialization."""
-        if self._stub is None:
-            _load_grpc_modules()
-            
-            cert, macaroon = self._get_credentials()
-            
-            # Crea callback per aggiungere macaroon agli header
-            def metadata_callback(context, callback):
-                callback([('macaroon', macaroon)], None)
-            
-            # Crea credenziali
-            cert_creds = grpc.ssl_channel_credentials(cert)
-            auth_creds = grpc.metadata_call_credentials(metadata_callback)
-            combined_creds = grpc.composite_channel_credentials(cert_creds, auth_creds)
-            
-            # Connetti a LND
-            lnd_host = self.config.get('LND_HOST', 'localhost:10009')
-            self._channel = grpc.secure_channel(lnd_host, combined_creds)
-            self._stub = lightning_pb2_grpc.LightningStub(self._channel)
-            
-            logger.info(f"Connected to LND at {lnd_host}")
+    def _get_headers(self):
+        """Restituisce headers per le richieste REST."""
+        return {
+            'Grpc-Metadata-macaroon': self._macaroon,
+            'Content-Type': 'application/json'
+        }
+    
+    def _request(self, method, endpoint, data=None):
+        """Esegue una richiesta REST a LND."""
+        if not self._macaroon:
+            raise Exception("LND macaroon not configured")
         
-        return self._stub
+        url = f"{self._base_url}{endpoint}"
+        
+        try:
+            # Usa verify=False per certificati self-signed locali
+            # In produzione, usa verify=self._cert_path
+            if method == 'GET':
+                response = requests.get(url, headers=self._get_headers(), verify=False, timeout=30)
+            elif method == 'POST':
+                response = requests.post(url, headers=self._get_headers(), json=data, verify=False, timeout=30)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+            
+            if response.status_code != 200:
+                error_msg = response.text
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('message', error_data.get('error', response.text))
+                except:
+                    pass
+                raise Exception(f"LND API error ({response.status_code}): {error_msg}")
+            
+            return response.json()
+            
+        except requests.exceptions.ConnectionError:
+            raise Exception("Cannot connect to LND. Is it running?")
+        except requests.exceptions.Timeout:
+            raise Exception("LND request timeout")
 
     def create_invoice(self, amount_sat, memo):
         """
@@ -105,19 +105,21 @@ class LightningManager:
         Returns:
             dict: {'payment_request': str, 'r_hash': str, 'amount': int}
         """
-        stub = self._get_stub()
+        data = {
+            'value': str(amount_sat),
+            'memo': memo,
+            'expiry': '3600'  # 1 ora
+        }
         
-        request = lightning_pb2.Invoice(
-            value=amount_sat,
-            memo=memo,
-            expiry=3600  # 1 ora
-        )
+        response = self._request('POST', '/v1/invoices', data)
         
-        response = stub.AddInvoice(request)
+        # r_hash è in base64, convertiamo in hex
+        r_hash_b64 = response.get('r_hash', '')
+        r_hash_hex = base64.b64decode(r_hash_b64).hex() if r_hash_b64 else ''
         
         return {
-            'payment_request': response.payment_request,
-            'r_hash': response.r_hash.hex(),
+            'payment_request': response.get('payment_request', ''),
+            'r_hash': r_hash_hex,
             'amount': amount_sat
         }
 
@@ -132,26 +134,25 @@ class LightningManager:
             bool: True se pagato
         """
         try:
-            stub = self._get_stub()
-            
-            # Converti hex string a bytes
+            # Converti hex a base64 URL-safe
             r_hash_bytes = bytes.fromhex(r_hash)
+            r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
             
-            request = lightning_pb2.PaymentHash(r_hash=r_hash_bytes)
-            invoice = stub.LookupInvoice(request)
+            response = self._request('GET', f'/v1/invoice/{r_hash_b64}')
             
-            # State 1 = SETTLED (pagato)
-            return invoice.state == 1
+            # State: OPEN=0, SETTLED=1, CANCELED=2, ACCEPTED=3
+            state = response.get('state', 'OPEN')
+            return state == 'SETTLED'
+            
         except Exception as e:
             logger.error(f"Error checking payment: {e}")
             return False
 
     def get_invoice(self, r_hash):
         """Recupera dettagli di una fattura."""
-        stub = self._get_stub()
         r_hash_bytes = bytes.fromhex(r_hash)
-        request = lightning_pb2.PaymentHash(r_hash=r_hash_bytes)
-        return stub.LookupInvoice(request)
+        r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
+        return self._request('GET', f'/v1/invoice/{r_hash_b64}')
     
     def pay_invoice(self, payment_request):
         """
@@ -164,17 +165,19 @@ class LightningManager:
             dict: Payment result
         """
         try:
-            stub = self._get_stub()
+            data = {'payment_request': payment_request}
+            response = self._request('POST', '/v1/channels/transactions', data)
             
-            request = lightning_pb2.SendRequest(payment_request=payment_request)
-            response = stub.SendPaymentSync(request)
+            if response.get('payment_error'):
+                return {'success': False, 'error': response['payment_error']}
             
-            if response.payment_error:
-                return {'success': False, 'error': response.payment_error}
+            preimage = response.get('payment_preimage', '')
+            if preimage:
+                preimage = base64.b64decode(preimage).hex()
             
             return {
                 'success': True, 
-                'preimage': response.payment_preimage.hex()
+                'preimage': preimage
             }
         except Exception as e:
             logger.error(f"Error paying invoice: {e}")
@@ -182,19 +185,20 @@ class LightningManager:
     
     def get_info(self):
         """Ottiene informazioni sul nodo LND."""
-        stub = self._get_stub()
-        request = lightning_pb2.GetInfoRequest()
-        return stub.GetInfo(request)
+        return self._request('GET', '/v1/getinfo')
     
     def get_balance(self):
         """Ottiene il bilancio del wallet."""
-        stub = self._get_stub()
-        request = lightning_pb2.WalletBalanceRequest()
-        return stub.WalletBalance(request)
+        return self._request('GET', '/v1/balance/blockchain')
+    
+    def is_synced(self):
+        """Verifica se LND è sincronizzato con la chain."""
+        try:
+            info = self.get_info()
+            return info.get('synced_to_chain', False)
+        except:
+            return False
     
     def close(self):
-        """Chiude la connessione gRPC."""
-        if self._channel:
-            self._channel.close()
-            self._channel = None
-            self._stub = None
+        """Chiude la connessione (no-op per REST)."""
+        pass
