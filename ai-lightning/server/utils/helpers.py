@@ -1,7 +1,10 @@
 """
 Utility functions for the AI Lightning server.
 """
-from ..config import Config
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import Config
 
 
 def validate_model(model_name):

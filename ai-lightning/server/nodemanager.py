@@ -228,7 +228,7 @@ class NodeManager:
         node_data = self.redis.hgetall(f"node:{node_id}")
         user_id = int(node_data[b'user_id'])
 
-        from .models import db, User, Transaction
+        from models import db, User, Transaction
         with db.session.begin():
             owner = User.query.get(user_id)
             owner.balance += amount

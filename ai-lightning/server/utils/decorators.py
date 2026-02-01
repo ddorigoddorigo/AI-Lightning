@@ -100,7 +100,10 @@ def validate_model_param(f):
     def decorated_function(*args, **kwargs):
         data = request.get_json()
         if data and 'model' in data:
-            from ..config import Config
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from config import Config
             if data['model'] not in Config.AVAILABLE_MODELS:
                 return jsonify({
                     'error': f'Invalid model. Available: {list(Config.AVAILABLE_MODELS.keys())}'
@@ -117,7 +120,10 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         from flask_jwt_extended import get_jwt_identity
-        from ..models import User
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from models import User
         
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
