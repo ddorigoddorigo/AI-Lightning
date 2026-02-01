@@ -117,6 +117,116 @@ def login():
     access_token = create_access_token(identity=user.id)
     return jsonify({'access_token': access_token})
 
+
+@app.route('/api/models/available', methods=['GET'])
+def get_available_models():
+    """
+    Restituisce lista aggregata di tutti i modelli disponibili dai nodi online.
+    Non richiede autenticazione.
+    """
+    models_map = {}  # model_id -> model_info + nodes_count
+    
+    # Raccogli modelli dai nodi WebSocket connessi
+    for node_id, info in connected_nodes.items():
+        node_models = info.get('models', [])
+        hardware = info.get('hardware', {})
+        node_name = info.get('name', node_id)
+        
+        for model in node_models:
+            if isinstance(model, dict):
+                # Nuovo formato con info complete
+                model_id = model.get('id', model.get('name', 'unknown'))
+                
+                if model_id not in models_map:
+                    models_map[model_id] = {
+                        'id': model_id,
+                        'name': model.get('name', model_id),
+                        'parameters': model.get('parameters', 'Unknown'),
+                        'quantization': model.get('quantization', 'Unknown'),
+                        'context_length': model.get('context_length', 4096),
+                        'architecture': model.get('architecture', 'unknown'),
+                        'size_gb': model.get('size_gb', 0),
+                        'min_vram_mb': model.get('min_vram_mb', 0),
+                        'nodes_count': 0,
+                        'nodes': []
+                    }
+                
+                models_map[model_id]['nodes_count'] += 1
+                models_map[model_id]['nodes'].append({
+                    'node_id': node_id,
+                    'node_name': node_name,
+                    'vram_available': hardware.get('total_vram_mb', 0)
+                })
+            else:
+                # Vecchio formato - solo nome modello
+                model_name = str(model)
+                if model_name not in models_map:
+                    models_map[model_name] = {
+                        'id': model_name,
+                        'name': model_name,
+                        'parameters': 'Unknown',
+                        'quantization': 'Unknown',
+                        'context_length': 4096,
+                        'architecture': 'unknown',
+                        'nodes_count': 0,
+                        'nodes': []
+                    }
+                
+                models_map[model_name]['nodes_count'] += 1
+                models_map[model_name]['nodes'].append({
+                    'node_id': node_id,
+                    'node_name': node_name
+                })
+    
+    # Converti in lista e ordina per disponibilità (più nodi = più affidabile)
+    models_list = list(models_map.values())
+    models_list.sort(key=lambda x: (-x['nodes_count'], x['name']))
+    
+    return jsonify({
+        'models': models_list,
+        'total_nodes_online': len(connected_nodes),
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
+
+@app.route('/api/nodes/online', methods=['GET'])
+def get_online_nodes():
+    """
+    Restituisce lista dei nodi online con le loro info hardware.
+    Non richiede autenticazione.
+    """
+    nodes = []
+    
+    for node_id, info in connected_nodes.items():
+        hardware = info.get('hardware', {})
+        models = info.get('models', [])
+        
+        nodes.append({
+            'node_id': node_id,
+            'name': info.get('name', node_id),
+            'models_count': len(models),
+            'hardware': {
+                'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
+                'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
+                'ram_gb': hardware.get('ram', {}).get('total_gb', 0),
+                'gpus': [
+                    {
+                        'name': gpu.get('name', 'Unknown'),
+                        'vram_mb': gpu.get('vram_total_mb', 0),
+                        'type': gpu.get('type', 'unknown')
+                    }
+                    for gpu in hardware.get('gpus', [])
+                ],
+                'total_vram_mb': hardware.get('total_vram_mb', 0)
+            }
+        })
+    
+    return jsonify({
+        'nodes': nodes,
+        'count': len(nodes),
+        'timestamp': datetime.utcnow().isoformat()
+    })
+
 # Session routes
 @app.route('/api/new_session', methods=['POST'])
 @jwt_required()
@@ -254,14 +364,21 @@ def start_session(data):
             session.active = True
             db.session.commit()
             
+            # Ottieni context dalla config o usa default
+            context = 4096
+            if session.model in Config.AVAILABLE_MODELS:
+                context = Config.AVAILABLE_MODELS[session.model].get('context', 4096)
+            
             # Invia richiesta al nodo
             socketio.emit('start_session', {
                 'session_id': session.id,
                 'model': session.model,
-                'context': Config.AVAILABLE_MODELS[session.model]['context']
+                'model_id': session.model,  # Per il nuovo sistema
+                'model_name': session.model,
+                'context': context
             }, room=f"node_{ws_node_id}")
             
-            join_room(session.id)
+            join_room(str(session.id))
             emit('session_started', {
                 'session_id': session.id,
                 'node_id': ws_node_id,
@@ -460,8 +577,9 @@ def node_heartbeat():
 # WebSocket handlers per nodi dietro NAT
 # ============================================
 
-# Dizionario per mappare node_id -> socket_id
-connected_nodes = {}  # node_id -> {'sid': socket_id, 'models': [...]}
+# Dizionario per mappare node_id -> socket_id e info
+# node_id -> {'sid': socket_id, 'models': [...], 'hardware': {...}, 'name': str}
+connected_nodes = {}  
 pending_requests = {}  # request_id -> {'session_id': ..., 'user_sid': ...}
 
 
@@ -470,6 +588,8 @@ def handle_node_register(data):
     """Registra un nodo connesso via WebSocket."""
     token = data.get('token', '')
     models = data.get('models', [])
+    hardware = data.get('hardware', {})
+    node_name = data.get('name', '')
     
     # Genera o valida node_id
     node_id = None
@@ -493,7 +613,9 @@ def handle_node_register(data):
         nm.redis.hset(f"node:{node_id}", mapping={
             'id': node_id,
             'token': token,
+            'name': node_name or node_id,
             'models': json.dumps(models) if models else '[]',
+            'hardware': json.dumps(hardware) if hardware else '{}',
             'status': 'online',
             'type': 'websocket',
             'last_ping': datetime.utcnow().timestamp(),
@@ -503,21 +625,33 @@ def handle_node_register(data):
     else:
         # Aggiorna nodo esistente
         nm = get_node_manager()
-        nm.redis.hset(f"node:{node_id}", mapping={
+        update_data = {
             'status': 'online',
             'last_ping': datetime.utcnow().timestamp(),
-            'models': json.dumps(models) if models else nm.redis.hget(f"node:{node_id}", 'models')
-        })
+        }
+        if models:
+            update_data['models'] = json.dumps(models)
+        if hardware:
+            update_data['hardware'] = json.dumps(hardware)
+        if node_name:
+            update_data['name'] = node_name
+        nm.redis.hset(f"node:{node_id}", mapping=update_data)
     
     # Registra nella mappa connessioni
     connected_nodes[node_id] = {
         'sid': request.sid,
-        'models': models
+        'models': models,
+        'hardware': hardware,
+        'name': node_name or node_id
     }
     
     join_room(f"node_{node_id}")
     
-    logger.info(f"Node {node_id} registered via WebSocket (sid: {request.sid})")
+    # Calcola VRAM totale
+    total_vram = hardware.get('total_vram_mb', 0) if hardware else 0
+    gpu_count = len(hardware.get('gpus', [])) if hardware else 0
+    
+    logger.info(f"Node {node_id} ({node_name}) registered via WebSocket - {len(models)} models, {gpu_count} GPUs, {total_vram}MB VRAM")
     
     emit('node_registered', {
         'node_id': node_id,
@@ -587,12 +721,100 @@ def handle_inference_error(data):
     emit('error', {'message': f'Inference error: {error}'}, room=session_id)
 
 
-def get_websocket_node(model):
-    """Trova un nodo WebSocket disponibile per il modello."""
+@socketio.on('node_models_update')
+def handle_node_models_update(data):
+    """Nodo aggiorna lista modelli disponibili."""
+    node_id = data.get('node_id')
+    models = data.get('models', [])
+    hardware = data.get('hardware')
+    
+    if not node_id:
+        # Cerca node_id dal socket id
+        for nid, info in connected_nodes.items():
+            if info['sid'] == request.sid:
+                node_id = nid
+                break
+    
+    if not node_id or node_id not in connected_nodes:
+        emit('error', {'message': 'Node not registered'})
+        return
+    
+    # Aggiorna modelli nel connected_nodes
+    connected_nodes[node_id]['models'] = models
+    if hardware:
+        connected_nodes[node_id]['hardware'] = hardware
+    
+    # Aggiorna anche in Redis
+    nm = get_node_manager()
+    update_data = {
+        'models': json.dumps(models),
+        'last_ping': datetime.utcnow().timestamp()
+    }
+    if hardware:
+        update_data['hardware'] = json.dumps(hardware)
+    nm.redis.hset(f"node:{node_id}", mapping=update_data)
+    
+    logger.info(f"Node {node_id} updated models: {len(models)} available")
+    
+    emit('models_updated', {'count': len(models)})
+
+
+@socketio.on('node_heartbeat')
+def handle_node_heartbeat(data):
+    """Heartbeat dal nodo per mantenere connessione attiva."""
+    node_id = data.get('node_id')
+    
+    if not node_id:
+        for nid, info in connected_nodes.items():
+            if info['sid'] == request.sid:
+                node_id = nid
+                break
+    
+    if node_id and node_id in connected_nodes:
+        nm = get_node_manager()
+        nm.redis.hset(f"node:{node_id}", 'last_ping', datetime.utcnow().timestamp())
+        emit('heartbeat_ack', {'timestamp': datetime.utcnow().isoformat()})
+
+
+def get_websocket_node(model_query):
+    """
+    Trova un nodo WebSocket disponibile per il modello.
+    
+    model_query può essere:
+    - Nome modello (vecchio formato)
+    - ID modello (nuovo formato)
+    - Nome parziale per matching fuzzy
+    """
     for node_id, info in connected_nodes.items():
-        if model in info.get('models', []):
-            return node_id, info['sid']
+        node_models = info.get('models', [])
+        
+        for model in node_models:
+            if isinstance(model, dict):
+                # Nuovo formato
+                model_id = model.get('id', '')
+                model_name = model.get('name', '')
+                
+                if (model_query == model_id or 
+                    model_query == model_name or
+                    model_query.lower() in model_name.lower()):
+                    return node_id, info['sid']
+            else:
+                # Vecchio formato - stringa
+                if model_query == model or model_query.lower() in str(model).lower():
+                    return node_id, info['sid']
+    
     return None, None
+
+
+def get_websocket_node_for_model_id(model_id):
+    """Trova un nodo WebSocket per uno specifico model_id."""
+    for node_id, info in connected_nodes.items():
+        for model in info.get('models', []):
+            if isinstance(model, dict) and model.get('id') == model_id:
+                return node_id, info['sid'], model
+            elif str(model) == model_id:
+                return node_id, info['sid'], {'name': model}
+    return None, None, None
 
 
 # ============================================

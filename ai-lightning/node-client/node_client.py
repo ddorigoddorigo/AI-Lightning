@@ -129,22 +129,29 @@ class NodeClient:
         
         self.server_url = self.config.get('Server', 'URL', fallback='http://localhost:5000')
         self.node_token = self.config.get('Node', 'token', fallback='')
+        self.node_name = self.config.get('Node', 'name', fallback='')
         self.llama_bin = self.config.get('LLM', 'bin', fallback='')
         self.gpu_layers = self.config.getint('LLM', 'gpu_layers', fallback=99)
         
-        # Carica modelli
-        self.models = {}
+        # Hardware info e modelli (da impostare esternamente)
+        self.hardware_info = None
+        self.models = []  # Lista modelli per il server
+        
+        # Carica modelli da config (legacy)
+        self.models_config = {}
         for section in self.config.sections():
             if section.startswith('Model:'):
                 name = section[6:]
-                self.models[name] = {
+                self.models_config[name] = {
                     'path': self.config.get(section, 'path'),
                     'context': self.config.getint(section, 'context', fallback=2048)
                 }
         
         self.active_sessions = {}  # session_id -> LlamaProcess
+        self.node_id = None
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         self.running = False
+        self._connected = False
         
         self._setup_handlers()
     
@@ -154,19 +161,29 @@ class NodeClient:
         @self.sio.event
         def connect():
             logger.info("Connected to server")
-            # Registra il nodo
-            self.sio.emit('node_register', {
+            self._connected = True
+            # Registra il nodo con tutte le info
+            registration_data = {
                 'token': self.node_token,
-                'models': list(self.models.keys())
-            })
+                'name': self.node_name,
+                'models': self.models if self.models else list(self.models_config.keys()),
+            }
+            
+            # Aggiungi hardware info se disponibile
+            if self.hardware_info:
+                registration_data['hardware'] = self.hardware_info
+            
+            self.sio.emit('node_register', registration_data)
         
         @self.sio.event
         def disconnect():
             logger.warning("Disconnected from server")
+            self._connected = False
         
         @self.sio.on('node_registered')
         def on_registered(data):
-            logger.info(f"Node registered with ID: {data.get('node_id')}")
+            self.node_id = data.get('node_id')
+            logger.info(f"Node registered with ID: {self.node_id}")
             # Salva token se nuovo
             if data.get('token'):
                 self.node_token = data['token']
@@ -176,15 +193,32 @@ class NodeClient:
         def on_start_session(data):
             """Richiesta di avviare una sessione"""
             session_id = str(data['session_id'])
-            model = data['model']
+            model_id = data.get('model_id') or data.get('model')
+            model_name = data.get('model_name', model_id)
             context = data.get('context', 2048)
             
-            logger.info(f"Starting session {session_id} with model {model}")
+            logger.info(f"Starting session {session_id} with model {model_name}")
             
-            if model not in self.models:
+            # Cerca il modello - prima per ID, poi per nome
+            model_path = None
+            
+            # Cerca nei modelli config (legacy)
+            if model_name in self.models_config:
+                model_path = self.models_config[model_name]['path']
+                context = self.models_config[model_name].get('context', context)
+            # Cerca per model_id nei modelli sync
+            elif isinstance(self.models, list):
+                for m in self.models:
+                    if m.get('id') == model_id or m.get('name') == model_name:
+                        # Il path viene dalla cartella modelli
+                        model_path = self.config.get('Models', 'directory', fallback='.') + '/' + m.get('filename', '')
+                        context = m.get('context_length', context)
+                        break
+            
+            if not model_path or not os.path.exists(model_path):
                 self.sio.emit('session_error', {
                     'session_id': session_id,
-                    'error': f'Model {model} not available'
+                    'error': f'Model {model_name} not available or file not found'
                 })
                 return
             
@@ -194,7 +228,7 @@ class NodeClient:
             # Avvia llama.cpp
             llama = LlamaProcess(
                 self.llama_bin,
-                self.models[model]['path'],
+                model_path,
                 port,
                 context,
                 self.gpu_layers
@@ -286,14 +320,41 @@ class NodeClient:
             logger.info(f"Connecting to {self.server_url}")
             self.sio.connect(self.server_url, wait_timeout=10)
             self.running = True
+            self._connected = True
         except Exception as e:
             logger.error(f"Connection failed: {e}")
+            self._connected = False
             return False
+        return True
+    
+    def is_connected(self):
+        """Verifica se connesso"""
+        return self._connected and self.sio.connected
+    
+    def sync_models(self, models):
+        """Sincronizza modelli con il server"""
+        if not self.is_connected():
+            logger.warning("Cannot sync models: not connected")
+            return False
+        
+        self.models = models
+        
+        sync_data = {
+            'node_id': self.node_id,
+            'models': models
+        }
+        
+        if self.hardware_info:
+            sync_data['hardware'] = self.hardware_info
+        
+        self.sio.emit('node_models_update', sync_data)
+        logger.info(f"Synced {len(models)} models with server")
         return True
     
     def disconnect(self):
         """Disconnetti e ferma tutto"""
         self.running = False
+        self._connected = False
         
         # Ferma tutte le sessioni
         for session_id, llama in list(self.active_sessions.items()):
