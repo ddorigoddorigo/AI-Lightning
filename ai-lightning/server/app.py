@@ -237,6 +237,38 @@ def new_session():
     """Crea una nuova sessione."""
     user_id = get_jwt_identity()
     data = request.get_json()
+    model_requested = data['model']
+
+    # Verifica che ci sia almeno un nodo con questo modello
+    node_with_model = None
+    model_price = None
+    
+    for node_id, info in connected_nodes.items():
+        node_models = info.get('models', [])
+        
+        # I modelli possono essere una lista di oggetti o una lista di stringhe
+        for model in node_models:
+            model_id = None
+            found_price = None
+            
+            if isinstance(model, dict):
+                # Nuovo formato: {id, name, path, ...}
+                model_id = model.get('id') or model.get('name')
+                found_price = model.get('price_per_minute')
+            else:
+                # Vecchio formato: stringa
+                model_id = str(model)
+            
+            if model_id == model_requested:
+                node_with_model = node_id
+                model_price = found_price
+                break
+        
+        if node_with_model:
+            break
+    
+    if not node_with_model:
+        return jsonify({'error': f'No node available with model: {model_requested}'}), 404
 
     # Valida minuti
     try:
@@ -247,18 +279,18 @@ def new_session():
     if minutes < 1 or minutes > 120:
         return jsonify({'error': 'Minutes must be between 1 and 120'}), 400
 
-    # Crea fattura
-    amount = get_model_price(data['model']) * minutes
+    # Crea fattura (usa prezzo dal nodo se disponibile)
+    amount = get_model_price(model_requested, model_price) * minutes
     invoice = get_lightning_manager().create_invoice(
         amount,
-        f"AI access: {data['model']} for {minutes} minutes"
+        f"AI access: {model_requested} for {minutes} minutes"
     )
 
     # Crea sessione nel DB (pending payment)
     session = Session(
         user_id=user_id,
         node_id='pending',
-        model=data['model'],
+        model=model_requested,
         payment_hash=invoice['r_hash'],
         expires_at=datetime.utcnow() + timedelta(minutes=minutes)
     )

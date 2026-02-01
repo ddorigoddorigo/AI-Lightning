@@ -6,33 +6,47 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import Config
 
+# Prezzo di default per modelli dinamici (sats/minuto)
+DEFAULT_DYNAMIC_MODEL_PRICE = 100
+
 
 def validate_model(model_name):
     """
     Validate that a model name is valid.
+    Accetta sia modelli statici che dinamici.
     
     Args:
         model_name: Name of the model to validate
         
     Returns:
-        bool: True if valid
+        bool: True if valid (non-empty string)
     """
-    return model_name in Config.AVAILABLE_MODELS
+    # Per i modelli dinamici, accetta qualsiasi stringa non vuota
+    # La validazione effettiva avviene quando si cerca un nodo
+    return bool(model_name and isinstance(model_name, str))
 
 
-def get_model_price(model_name):
+def get_model_price(model_name, price_from_node=None):
     """
     Get the price per minute for a model.
+    Supporta sia modelli statici (da Config) che dinamici (dai nodi).
     
     Args:
         model_name: Name of the model
+        price_from_node: Optional price provided by node for dynamic models
         
     Returns:
         int: Price in satoshis per minute
     """
-    if model_name not in Config.AVAILABLE_MODELS:
-        raise ValueError(f"Unknown model: {model_name}")
-    return Config.AVAILABLE_MODELS[model_name]['price_per_minute']
+    # Prima controlla se è un modello statico
+    if model_name in Config.AVAILABLE_MODELS:
+        return Config.AVAILABLE_MODELS[model_name]['price_per_minute']
+    
+    # Per modelli dinamici, usa il prezzo dal nodo o il default
+    if price_from_node is not None:
+        return int(price_from_node)
+    
+    return DEFAULT_DYNAMIC_MODEL_PRICE
 
 
 def format_satoshis(amount):

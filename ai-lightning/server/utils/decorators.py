@@ -95,19 +95,26 @@ def validate_json(*required_fields):
 def validate_model_param(f):
     """
     Decorator per validare il parametro 'model'.
+    Accetta sia modelli statici da Config che modelli dinamici dai nodi.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         data = request.get_json()
         if data and 'model' in data:
-            import sys
-            import os
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from config import Config
-            if data['model'] not in Config.AVAILABLE_MODELS:
+            model = data['model']
+            
+            # Modello valido se:
+            # 1. È in Config.AVAILABLE_MODELS (lista statica)
+            # 2. È un modello dinamico (qualsiasi stringa non vuota)
+            # La validazione effettiva avviene quando si cerca un nodo
+            
+            if not model or not isinstance(model, str):
                 return jsonify({
-                    'error': f'Invalid model. Available: {list(Config.AVAILABLE_MODELS.keys())}'
+                    'error': 'Invalid model: model must be a non-empty string'
                 }), 400
+            
+            # Permetti qualsiasi modello - sarà validato quando si cerca un nodo
+            # I modelli dinamici vengono dai nodi connessi
         return f(*args, **kwargs)
     return decorated_function
 
