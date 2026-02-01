@@ -6,6 +6,10 @@ caricate da variabili d'ambiente o valori di default.
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Carica variabili d'ambiente da .env
+load_dotenv()
 
 class Config:
     # Flask config
