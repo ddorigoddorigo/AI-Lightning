@@ -592,6 +592,7 @@ class NodeGUI:
                     self.client.hardware_info = self.system_info
                 if self.model_manager:
                     self.client.models = self.model_manager.get_models_for_server()
+                    self.client.model_manager = self.model_manager  # For local file paths
                 
                 if self.client.connect():
                     self.root.after(0, self._on_connected)

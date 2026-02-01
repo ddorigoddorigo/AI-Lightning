@@ -36,6 +36,16 @@ class LlamaProcess:
         
     def start(self):
         """Avvia il server llama.cpp"""
+        # Verifica che llama_bin esista
+        if not self.llama_bin or not os.path.exists(self.llama_bin):
+            logger.error(f"llama.cpp binary not found: {self.llama_bin}")
+            return False
+        
+        # Verifica che il modello esista
+        if not self.model_path or not os.path.exists(self.model_path):
+            logger.error(f"Model file not found: {self.model_path}")
+            return False
+        
         cmd = [
             self.llama_bin,
             '-m', self.model_path,
@@ -136,6 +146,7 @@ class NodeClient:
         # Hardware info e modelli (da impostare esternamente)
         self.hardware_info = None
         self.models = []  # Lista modelli per il server
+        self.model_manager = None  # Reference to ModelManager for local paths
         
         # Carica modelli da config (legacy)
         self.models_config = {}
@@ -197,7 +208,7 @@ class NodeClient:
             model_name = data.get('model_name', model_id)
             context = data.get('context', 2048)
             
-            logger.info(f"Starting session {session_id} with model {model_name}")
+            logger.info(f"Starting session {session_id} with model {model_name} (id: {model_id})")
             
             # Cerca il modello - prima per ID, poi per nome
             model_path = None
@@ -206,19 +217,36 @@ class NodeClient:
             if model_name in self.models_config:
                 model_path = self.models_config[model_name]['path']
                 context = self.models_config[model_name].get('context', context)
-            # Cerca per model_id nei modelli sync
-            elif isinstance(self.models, list):
+            
+            # Cerca tramite ModelManager (ha i filepath locali)
+            elif self.model_manager:
+                model_info = self.model_manager.get_model_by_id(model_id)
+                if not model_info:
+                    model_info = self.model_manager.get_model_by_name(model_name)
+                if model_info:
+                    model_path = model_info.filepath
+                    context = model_info.context_length or context
+                    logger.info(f"Found model via ModelManager: {model_path}")
+            
+            # Fallback: cerca per model_id nei modelli sync (senza filepath)
+            if not model_path and isinstance(self.models, list):
+                models_dir = self.config.get('Models', 'directory', fallback='.')
                 for m in self.models:
                     if m.get('id') == model_id or m.get('name') == model_name:
-                        # Il path viene dalla cartella modelli
-                        model_path = self.config.get('Models', 'directory', fallback='.') + '/' + m.get('filename', '')
-                        context = m.get('context_length', context)
+                        # Prova a trovare il file nella directory
+                        if m.get('filename'):
+                            potential_path = os.path.join(models_dir, m.get('filename'))
+                            if os.path.exists(potential_path):
+                                model_path = potential_path
+                                context = m.get('context_length', context)
                         break
             
             if not model_path or not os.path.exists(model_path):
+                error_msg = f'Model {model_name} (id: {model_id}) not available or file not found'
+                logger.error(error_msg)
                 self.sio.emit('session_error', {
                     'session_id': session_id,
-                    'error': f'Model {model_name} not available or file not found'
+                    'error': error_msg
                 })
                 return
             

@@ -484,7 +484,20 @@ function copyInvoice() {
 }
 
 function checkPayment() {
-    if (!currentSession) return;
+    if (!currentSession) {
+        showError('No active session');
+        return;
+    }
+    
+    if (!socket || !socket.connected) {
+        showError('Not connected to server. Reconnecting...');
+        connectSocket();
+        setTimeout(checkPayment, 1000);  // Retry after 1s
+        return;
+    }
+    
+    console.log('Checking payment for session:', currentSession);
+    showSuccess('Checking payment status...');
     socket.emit('start_session', {session_id: currentSession});
 }
 
@@ -558,8 +571,14 @@ function connectSocket() {
     });
 
     socket.on('error', (data) => {
-        addMessage('System', `Error: ${data.message}`);
-        enableInput();
+        console.error('Socket error:', data);
+        showError(data.message);
+        // Also add to chat if visible
+        const chatSection = document.getElementById('chat-section');
+        if (chatSection && chatSection.style.display !== 'none') {
+            addMessage('System', `Error: ${data.message}`);
+            enableInput();
+        }
     });
 
     socket.on('disconnect', () => {
