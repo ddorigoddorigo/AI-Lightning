@@ -26,7 +26,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+# Configura percorsi per templates e static files
+import os
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+template_dir = os.path.join(base_dir, 'web-client')
+static_dir = os.path.join(base_dir, 'web-client')
+
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path='')
 app.config.from_object(Config)
 db.init_app(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
