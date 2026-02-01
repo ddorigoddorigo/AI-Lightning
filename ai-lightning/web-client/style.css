@@ -1,0 +1,125 @@
+:root {
+    --primary: #ff6b35;
+    --background: #1a1a2e;
+    --text: #e0e0e0;
+    --error: #ff4d4d;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--background);
+    color: var(--text);
+    margin: 0;
+    padding: 20px;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+#auth-section, #main-section {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.input-area {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#prompt {
+    flex-grow: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: #2d2d44;
+    color: var(--text);
+}
+
+button {
+    background: var(--primary);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+}
+
+.chat-container {
+    background: #2d2d44;
+    border-radius: 10px;
+    padding: 20px;
+    height: 500px;
+    overflow-y: auto;
+    margin: 20px 0;
+}
+
+.message {
+    margin-bottom: 15px;
+    padding: 10px 15px;
+    border-radius: 8px;
+    max-width: 80%;
+}
+
+.user-message {
+    background: #3a3a52;
+    margin-left: 20%;
+    border-bottom-right-radius: 0;
+}
+
+.ai-message {
+    background: var(--primary);
+    color: #1a1a2e;
+    margin-right: 20%;
+    border-bottom-left-radius: 0;
+}
+
+.system {
+    color: #aaa;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+.model-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.model-option {
+    padding: 10px;
+    background: #3a3a52;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.model-option.selected {
+    background: var(--primary);
+    color: #1a1a2e;
+}
+
+.duration {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#invoice-section {
+    background: #2d2d44;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 20px 0;
+    display: none;
+}
+
+#invoice {
+    background: #3a3a52;
+    padding: 10px;
+    border-radius: 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}

@@ -1,0 +1,9 @@
+Flask==3.0.0
+Flask-SocketIO==5.3.5
+Flask-JWT-Extended==4.4.4
+psycopg2-binary==2.9.9
+redis==5.0.1
+pyln-client==0.12.1
+gunicorn==21.2.0
+python-dotenv==1.0.0
+httpx==0.23.3

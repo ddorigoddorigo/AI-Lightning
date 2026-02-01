@@ -1,0 +1,5 @@
+tk==0.1.0
+ttkthemes==3.2.1
+socketio-client==0.2.1
+httpx==0.23.3
+python-dotenv==1.0.0

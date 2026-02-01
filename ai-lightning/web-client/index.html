@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Lightning</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div id="auth-section">
+            <div id="login-form">
+                <h1>AI Lightning</h1>
+                <input type="text" id="username" placeholder="Username">
+                <input type="password" id="password" placeholder="Password">
+                <button onclick="login()">Login</button>
+                <p>No account? <a href="#" onclick="showRegister()">Register</a></p>
+            </div>
+            <div id="register-form" style="display: none;">
+                <h1>AI Lightning</h1>
+                <input type="text" id="reg-username" placeholder="Username">
+                <input type="password" id="reg-password" placeholder="Password">
+                <button onclick="register()">Register</button>
+            </div>
+        </div>
+
+        <div id="main-section" style="display: none;">
+            <div class="model-selector">
+                <div class="model-option selected" data-model="base" onclick="selectModel('base')">🦜 Base</div>
+                <div class="model-option" data-model="tiny" onclick="selectModel('tiny')">🐇 Tiny</div>
+                <div class="model-option" data-model="large" onclick="selectModel('large')">🦅 Large</div>
+                <div class="duration">
+                    <label for="minutes">Duration:</label>
+                    <input type="number" id="minutes" value="5" min="1" max="120">
+                </div>
+                <button onclick="createSession()">Buy Session</button>
+            </div>
+
+            <div id="invoice-section">
+                <p>Pay this Lightning invoice:</p>
+                <pre id="invoice"></pre>
+                <button onclick="checkPayment()" style="display: none;">I've paid</button>
+            </div>
+
+            <div class="chat-container" id="chat">
+                <div class="message system">Ready! Buy a session to start chatting.</div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="prompt" placeholder="Type your message..." onkeypress="if(event.key=='Enter') sendMessage()">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
