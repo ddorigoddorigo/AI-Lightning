@@ -52,8 +52,7 @@ class LlamaProcess:
             '--host', '127.0.0.1',
             '--port', str(self.port),
             '--ctx-size', str(self.context),
-            '-ngl', str(self.gpu_layers),
-            '--log-disable'
+            '-ngl', str(self.gpu_layers)
         ]
         
         logger.info(f"Starting llama.cpp: {' '.join(cmd)}")
