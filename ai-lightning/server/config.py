@@ -14,6 +14,7 @@ load_dotenv()
 class Config:
     # Flask config
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-ChangeMe!'
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or os.environ.get('SECRET_KEY') or 'jwt-secret-key-ChangeMe!'
     DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
     PORT = os.environ.get('PORT', '5000')
 
