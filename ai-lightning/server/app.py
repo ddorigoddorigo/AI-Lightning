@@ -39,6 +39,19 @@ db.init_app(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 jwt = JWTManager(app)
 
+# JWT Error handlers
+@jwt.expired_token_loader
+def expired_token_callback(jwt_header, jwt_payload):
+    return jsonify({'error': 'Token expired', 'code': 'token_expired'}), 401
+
+@jwt.invalid_token_loader
+def invalid_token_callback(error):
+    return jsonify({'error': 'Invalid token', 'code': 'token_invalid'}), 401
+
+@jwt.unauthorized_loader
+def missing_token_callback(error):
+    return jsonify({'error': 'Authorization required', 'code': 'token_missing'}), 401
+
 # Lazy initialization - will be set up in app context
 lm = None
 node_manager = None

@@ -260,6 +260,12 @@ async function addTestBalance() {
         const data = await response.json();
         
         if (!response.ok) {
+            // Se token scaduto/invalido, forza logout
+            if (response.status === 401 || response.status === 422 || data.code === 'token_expired') {
+                showError('Session expired. Please login again.');
+                logout();
+                return;
+            }
             throw new Error(data.error || 'Failed to add balance');
         }
         
