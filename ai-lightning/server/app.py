@@ -152,26 +152,33 @@ def add_test_balance():
     Aggiunge balance di test (solo per development/testnet).
     In produzione questo endpoint dovrebbe essere disabilitato o protetto.
     """
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
-    
-    data = request.get_json() or {}
-    amount = data.get('amount', 10000)  # Default 10000 sats
-    
-    # Limite per evitare abusi
-    if amount > 1000000:  # Max 1M sats per richiesta
-        amount = 1000000
-    
-    user.balance += amount
-    db.session.commit()
-    
-    return jsonify({
-        'message': f'Added {amount} sats to your balance',
-        'new_balance': user.balance
-    })
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        amount = data.get('amount', 10000)  # Default 10000 sats
+        
+        # Limite per evitare abusi
+        if amount > 1000000:  # Max 1M sats per richiesta
+            amount = 1000000
+        
+        user.balance += amount
+        db.session.commit()
+        
+        logger.info(f"Added {amount} sats to user {user.username} (new balance: {user.balance})")
+        
+        return jsonify({
+            'message': f'Added {amount} sats to your balance',
+            'new_balance': user.balance
+        })
+    except Exception as e:
+        logger.error(f"Error adding test balance: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/models/available', methods=['GET'])
