@@ -127,7 +127,8 @@ def login():
     if not user or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid credentials'}), 401
 
-    access_token = create_access_token(identity=user.id)
+    access_token = create_access_token(identity=str(user.id))
+    logger.info(f"User {user.username} logged in, token created for id={user.id}")
     return jsonify({'access_token': access_token})
 
 
@@ -136,14 +137,26 @@ def login():
 def get_user_profile():
     """Restituisce informazioni sull'utente corrente incluso il balance."""
     user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    logger.info(f"/api/me called with identity: {user_id} (type: {type(user_id).__name__})")
+    
+    # Converti a int se necessario
+    try:
+        user_id_int = int(user_id)
+    except (ValueError, TypeError):
+        logger.error(f"Invalid user_id format: {user_id}")
+        return jsonify({'error': 'Invalid token identity'}), 401
+    
+    user = User.query.get(user_id_int)
     
     if not user:
+        logger.error(f"User not found for id: {user_id_int}")
         return jsonify({'error': 'User not found'}), 404
+    
+    logger.info(f"Profile loaded for user: {user.username}")
     
     # Conta sessioni attive
     active_sessions = Session.query.filter_by(
-        user_id=user_id, 
+        user_id=user_id_int, 
         active=True
     ).filter(Session.expires_at > datetime.utcnow()).count()
     
