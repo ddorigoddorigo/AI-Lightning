@@ -6,6 +6,7 @@ caricate da variabili d'ambiente o valori di default.
 """
 import os
 from pathlib import Path
+from datetime import timedelta
 from dotenv import load_dotenv
 
 # Carica variabili d'ambiente da .env
@@ -55,6 +56,8 @@ class Config:
     NODE_PAYMENT_RATIO = 0.7  # % del pagamento che va al nodo
     MIN_NODE_PAYMENT = 20  # satoshis minimi per sessione
 
-    # Security
-    JWT_EXPIRATION = 3600  # 1 ora
-    JWT_ALGORITHM = 'HS256'
+    # Security / JWT
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)  # Token valido 24 ore
+    JWT_TOKEN_LOCATION = ['headers']
+    JWT_HEADER_NAME = 'Authorization'
+    JWT_HEADER_TYPE = 'Bearer'
