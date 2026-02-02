@@ -310,6 +310,8 @@ class LlamaProcess:
         full_response = ""
         
         try:
+            logger.debug(f"Starting stream request to llama-server on port {self.port}")
+            
             with httpx.stream(
                 'POST',
                 f"http://127.0.0.1:{self.port}/completion",
@@ -323,13 +325,16 @@ class LlamaProcess:
                 timeout=300  # 5 minuti per streaming
             ) as response:
                 if response.status_code != 200:
+                    logger.error(f"llama-server returned status {response.status_code}")
                     return None, f"HTTP {response.status_code}"
+                
+                logger.debug("Stream connection established, processing chunks...")
                 
                 buffer = ""
                 for chunk in response.iter_text():
                     buffer += chunk
                     
-                    # Processa linee complete (formato: data: {...}\n\n)
+                    # Processa linee complete (formato SSE: data: {...}\n\n)
                     while '\n' in buffer:
                         line, buffer = buffer.split('\n', 1)
                         line = line.strip()
@@ -342,6 +347,7 @@ class LlamaProcess:
                             line = line[6:]
                         
                         if line == '[DONE]':
+                            logger.debug("Received [DONE] marker")
                             continue
                         
                         try:
@@ -352,19 +358,41 @@ class LlamaProcess:
                             if token:
                                 full_response += token
                                 if token_callback:
-                                    # Invia token pulito
+                                    # Invia token al callback
                                     token_callback(token, is_final)
                             
                             if is_final:
+                                logger.debug("Received final token marker (stop=true)")
                                 break
                                 
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
+                            logger.debug(f"JSON decode error for line: {line[:50]}... - {e}")
                             continue
                 
-            # Restituisci la risposta raw - il parsing avviene lato client
+                # Processa eventuale buffer rimanente
+                if buffer.strip():
+                    line = buffer.strip()
+                    if line.startswith('data: '):
+                        line = line[6:]
+                    if line and line != '[DONE]':
+                        try:
+                            data = json.loads(line)
+                            token = data.get('content', '')
+                            if token:
+                                full_response += token
+                                if token_callback:
+                                    token_callback(token, True)
+                        except:
+                            pass
+                
+            logger.debug(f"Stream completed, total response length: {len(full_response)}")
             return full_response, None
             
+        except httpx.TimeoutException as e:
+            logger.error(f"Stream timeout: {e}")
+            return None, f"Timeout: {str(e)}"
         except Exception as e:
+            logger.error(f"Stream error: {e}")
             return None, str(e)
 
 
@@ -620,16 +648,19 @@ class NodeClient:
                     def token_callback(token, is_final):
                         nonlocal token_count
                         token_count += 1
+                        logger.debug(f"Sending token {token_count} for session {session_id}: '{token[:30] if len(token) > 30 else token}'")
                         self.sio.emit('inference_token', {
                             'session_id': session_id,
                             'token': token,
                             'is_final': is_final
                         })
                     
+                    logger.info(f"Starting streaming inference for session {session_id}")
                     result, error = llama.generate_stream(
                         prompt, max_tokens, temperature, stop, 
                         token_callback=token_callback
                     )
+                    logger.info(f"Streaming complete for session {session_id}: {token_count} tokens")
                     
                     response_time_ms = (time.time() - start_time) * 1000
                     

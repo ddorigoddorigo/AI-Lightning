@@ -613,7 +613,7 @@ def start_session(data):
             f"Payment for session {session.id}"
         )
 
-        join_room(session.id)
+        join_room(str(session.id))
         emit('session_started', {
             'session_id': session.id,
             'node_id': node_id_str,
@@ -1076,6 +1076,8 @@ def handle_inference_token(data):
     session_id = str(data['session_id'])
     token = data.get('token', '')
     is_final = data.get('is_final', False)
+    
+    logger.debug(f"Token received for session {session_id}: '{token[:20]}...' final={is_final}")
     
     # Inoltra token al client
     emit('ai_token', {
