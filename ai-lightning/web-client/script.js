@@ -741,7 +741,6 @@ function connectSocket() {
         
         updateLoadingOverlay(displayMessage, displayStatus);
     });
-    });
     
     socket.on('session_ready', (data) => {
         hideLoadingOverlay();
