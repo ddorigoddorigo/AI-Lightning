@@ -18,6 +18,9 @@ class Config:
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or os.environ.get('SECRET_KEY') or 'jwt-secret-key-ChangeMe!'
     DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
     PORT = os.environ.get('PORT', '5000')
+    
+    # Test mode (no real Lightning payments)
+    TEST_MODE = os.environ.get('TEST_MODE', 'false')
 
     # Database
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'postgresql:///ailightning'

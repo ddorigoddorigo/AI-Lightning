@@ -8,6 +8,8 @@ import base64
 import logging
 import requests
 import urllib3
+import hashlib
+import time
 
 # Disabilita warning SSL per certificati self-signed
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -27,7 +29,12 @@ class LightningManager:
         self._macaroon = None
         self._cert_path = None
         self._base_url = None
-        self._setup_connection()
+        self._test_mode = config.get('TEST_MODE', 'false').lower() == 'true'
+        
+        if self._test_mode:
+            logger.info("Lightning Manager running in TEST MODE - no real payments")
+        else:
+            self._setup_connection()
         
     def _setup_connection(self):
         """Configura i parametri di connessione."""
@@ -105,6 +112,17 @@ class LightningManager:
         Returns:
             dict: {'payment_request': str, 'r_hash': str, 'amount': int}
         """
+        # TEST MODE: genera invoice fake che risulta sempre pagata
+        if self._test_mode:
+            r_hash = hashlib.sha256(f"{memo}{time.time()}".encode()).hexdigest()
+            fake_invoice = f"lntb{amount_sat}test{r_hash[:20]}"
+            logger.info(f"[TEST MODE] Created fake invoice: {r_hash[:16]}...")
+            return {
+                'payment_request': fake_invoice,
+                'r_hash': r_hash,
+                'amount': amount_sat
+            }
+        
         data = {
             'value': str(amount_sat),
             'memo': memo,
@@ -133,6 +151,11 @@ class LightningManager:
         Returns:
             bool: True se pagato
         """
+        # TEST MODE: pagamenti sempre confermati
+        if self._test_mode:
+            logger.info(f"[TEST MODE] Payment {r_hash[:16]}... auto-confirmed")
+            return True
+        
         try:
             # Converti hex a base64 URL-safe
             r_hash_bytes = bytes.fromhex(r_hash)
@@ -150,6 +173,8 @@ class LightningManager:
 
     def get_invoice(self, r_hash):
         """Recupera dettagli di una fattura."""
+        if self._test_mode:
+            return {'state': 'SETTLED', 'r_hash': r_hash}
         r_hash_bytes = bytes.fromhex(r_hash)
         r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
         return self._request('GET', f'/v1/invoice/{r_hash_b64}')
@@ -164,6 +189,10 @@ class LightningManager:
         Returns:
             dict: Payment result
         """
+        if self._test_mode:
+            logger.info(f"[TEST MODE] Paid invoice: {payment_request[:30]}...")
+            return {'success': True, 'preimage': hashlib.sha256(payment_request.encode()).hexdigest()}
+        
         try:
             data = {'payment_request': payment_request}
             response = self._request('POST', '/v1/channels/transactions', data)
@@ -185,10 +214,14 @@ class LightningManager:
     
     def get_info(self):
         """Ottiene informazioni sul nodo LND."""
+        if self._test_mode:
+            return {'alias': 'TEST_NODE', 'synced_to_chain': True, 'version': 'test'}
         return self._request('GET', '/v1/getinfo')
     
     def get_balance(self):
         """Ottiene il bilancio del wallet."""
+        if self._test_mode:
+            return {'total_balance': '1000000', 'confirmed_balance': '1000000'}
         return self._request('GET', '/v1/balance/blockchain')
     
     def is_synced(self):
