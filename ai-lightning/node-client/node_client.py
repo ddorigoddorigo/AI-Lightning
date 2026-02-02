@@ -129,6 +129,7 @@ class LlamaProcess:
         self.use_hf = use_hf
         self.process = None
         self.is_downloading = False
+        self._stop_streaming = False  # Flag per interrompere streaming in corso
         
     def start(self, download_callback=None):
         """
@@ -249,7 +250,8 @@ class LlamaProcess:
         return False
     
     def stop(self):
-        """Ferma il processo"""
+        """Ferma il processo e interrompe streaming in corso"""
+        self._stop_streaming = True  # Segnala stop allo streaming
         if self.process:
             self.process.terminate()
             try:
@@ -257,6 +259,15 @@ class LlamaProcess:
             except:
                 self.process.kill()
             self.process = None
+    
+    def request_stop_streaming(self):
+        """Richiede l'interruzione dello streaming corrente senza fermare il processo"""
+        self._stop_streaming = True
+        logger.info("Streaming stop requested")
+    
+    def reset_stop_flag(self):
+        """Reset del flag di stop prima di una nuova generazione"""
+        self._stop_streaming = False
     
     def is_running(self):
         return self.process and self.process.poll() is None
@@ -307,7 +318,11 @@ class LlamaProcess:
         if not self.is_running():
             return None, "Process not running"
         
+        # Reset flag di stop per nuova generazione
+        self.reset_stop_flag()
+        
         full_response = ""
+        was_stopped = False
         
         try:
             logger.debug(f"Starting stream request to llama-server on port {self.port}")
@@ -332,10 +347,21 @@ class LlamaProcess:
                 
                 buffer = ""
                 for chunk in response.iter_text():
+                    # Controlla se è stato richiesto lo stop
+                    if self._stop_streaming:
+                        logger.info("Streaming interrupted by stop request")
+                        was_stopped = True
+                        break
+                    
                     buffer += chunk
                     
                     # Processa linee complete (formato SSE: data: {...}\n\n)
                     while '\n' in buffer:
+                        # Ricontrolla stop flag durante parsing
+                        if self._stop_streaming:
+                            was_stopped = True
+                            break
+                            
                         line, buffer = buffer.split('\n', 1)
                         line = line.strip()
                         
@@ -368,9 +394,12 @@ class LlamaProcess:
                         except json.JSONDecodeError as e:
                             logger.debug(f"JSON decode error for line: {line[:50]}... - {e}")
                             continue
+                    
+                    if was_stopped:
+                        break
                 
-                # Processa eventuale buffer rimanente
-                if buffer.strip():
+                # Processa eventuale buffer rimanente (solo se non stoppato)
+                if not was_stopped and buffer.strip():
                     line = buffer.strip()
                     if line.startswith('data: '):
                         line = line[6:]
@@ -384,6 +413,10 @@ class LlamaProcess:
                                     token_callback(token, True)
                         except:
                             pass
+            
+            if was_stopped:
+                logger.info(f"Stream stopped by user, partial response length: {len(full_response)}")
+                return full_response, "Stopped by user"
                 
             logger.debug(f"Stream completed, total response length: {len(full_response)}")
             return full_response, None
@@ -392,6 +425,10 @@ class LlamaProcess:
             logger.error(f"Stream timeout: {e}")
             return None, f"Timeout: {str(e)}"
         except Exception as e:
+            # Se è stato stoppato, l'errore potrebbe essere dovuto alla chiusura della connessione
+            if self._stop_streaming:
+                logger.info(f"Stream interrupted during stop, partial response: {len(full_response)} chars")
+                return full_response, "Stopped by user"
             logger.error(f"Stream error: {e}")
             return None, str(e)
 
@@ -615,11 +652,18 @@ class NodeClient:
         def on_stop_session(data):
             """Richiesta di fermare una sessione"""
             session_id = str(data['session_id'])
+            logger.info(f"Received stop_session request for session {session_id}")
             
             if session_id in self.active_sessions:
-                self.active_sessions[session_id].stop()
+                llama_process = self.active_sessions[session_id]
+                # Prima richiedi lo stop dello streaming (se in corso)
+                llama_process.request_stop_streaming()
+                # Poi ferma il processo
+                llama_process.stop()
                 del self.active_sessions[session_id]
-                logger.info(f"Session {session_id} stopped")
+                logger.info(f"Session {session_id} stopped and streaming interrupted")
+            else:
+                logger.warning(f"Session {session_id} not found in active sessions")
             
             self.sio.emit('session_stopped', {'session_id': session_id})
         
