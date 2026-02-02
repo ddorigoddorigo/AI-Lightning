@@ -1112,6 +1112,8 @@ def handle_inference_complete(data):
     tokens_generated = data.get('tokens_generated', 0)
     response_time_ms = data.get('response_time_ms', 0)
     
+    logger.info(f"[STREAMING] inference_complete for session {session_id}, tokens: {tokens_generated}, content length: {len(content) if content else 0}")
+    
     # Aggiorna statistiche nodo
     session = Session.query.get(session_id)
     if session and session.node_id:

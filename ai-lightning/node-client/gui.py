@@ -91,7 +91,12 @@ class NodeGUI:
         self.notebook.add(self.log_frame, text="📝 Log")
         self._create_log_tab()
         
-        # === Tab 6: Statistiche ===
+        # === Tab 6: LLM Output ===
+        self.llm_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.llm_frame, text="🤖 LLM Output")
+        self._create_llm_tab()
+        
+        # === Tab 7: Statistiche ===
         self.stats_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.stats_frame, text="📈 Statistiche")
         self._create_stats_tab()
@@ -376,6 +381,111 @@ class NodeGUI:
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.log_text.config(state='disabled')
     
+    def _create_llm_tab(self):
+        """Tab per visualizzare l'output LLM in tempo reale"""
+        
+        # Info frame
+        info_frame = ttk.Frame(self.llm_frame)
+        info_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.llm_session_var = tk.StringVar(value="Nessuna sessione attiva")
+        ttk.Label(info_frame, text="Sessione:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(info_frame, textvariable=self.llm_session_var, font=('Arial', 9)).pack(side=tk.LEFT, padx=10)
+        
+        self.llm_tokens_var = tk.StringVar(value="Token: 0")
+        ttk.Label(info_frame, textvariable=self.llm_tokens_var, font=('Arial', 9)).pack(side=tk.RIGHT, padx=10)
+        
+        # Toolbar
+        toolbar = ttk.Frame(self.llm_frame)
+        toolbar.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(toolbar, text="🗑️ Cancella", command=self._clear_llm_output).pack(side=tk.LEFT, padx=5)
+        ttk.Button(toolbar, text="📋 Copia", command=self._copy_llm_output).pack(side=tk.LEFT, padx=5)
+        
+        self.llm_autoscroll = tk.BooleanVar(value=True)
+        ttk.Checkbutton(toolbar, text="Auto-scroll", variable=self.llm_autoscroll).pack(side=tk.LEFT, padx=10)
+        
+        # Prompt section
+        prompt_frame = ttk.LabelFrame(self.llm_frame, text="📥 Prompt Ricevuto", padding=5)
+        prompt_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.llm_prompt_text = scrolledtext.ScrolledText(prompt_frame, height=4, font=('Consolas', 9), wrap=tk.WORD)
+        self.llm_prompt_text.pack(fill=tk.X, expand=False)
+        self.llm_prompt_text.config(state='disabled', bg='#2a2a3a', fg='#aaaaaa')
+        
+        # Output section
+        output_frame = ttk.LabelFrame(self.llm_frame, text="📤 Output LLM (Token per Token)", padding=5)
+        output_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        self.llm_output_text = scrolledtext.ScrolledText(output_frame, height=15, font=('Consolas', 10), wrap=tk.WORD)
+        self.llm_output_text.pack(fill=tk.BOTH, expand=True)
+        self.llm_output_text.config(state='disabled', bg='#1a1a2a', fg='#00ff00')
+        
+        # Token counter per sessione
+        self.llm_token_count = 0
+
+    def _clear_llm_output(self):
+        """Cancella l'output LLM"""
+        self.llm_prompt_text.config(state='normal')
+        self.llm_prompt_text.delete('1.0', tk.END)
+        self.llm_prompt_text.config(state='disabled')
+        
+        self.llm_output_text.config(state='normal')
+        self.llm_output_text.delete('1.0', tk.END)
+        self.llm_output_text.config(state='disabled')
+        
+        self.llm_token_count = 0
+        self.llm_tokens_var.set("Token: 0")
+        self.llm_session_var.set("Nessuna sessione attiva")
+    
+    def _copy_llm_output(self):
+        """Copia l'output LLM negli appunti"""
+        output = self.llm_output_text.get('1.0', tk.END)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(output)
+        self.update_status("Output LLM copiato negli appunti")
+    
+    def llm_set_prompt(self, session_id, prompt):
+        """Imposta il prompt visualizzato"""
+        def update():
+            self.llm_session_var.set(f"Sessione: {session_id}")
+            self.llm_token_count = 0
+            self.llm_tokens_var.set("Token: 0")
+            
+            self.llm_prompt_text.config(state='normal')
+            self.llm_prompt_text.delete('1.0', tk.END)
+            self.llm_prompt_text.insert(tk.END, prompt[-2000:] if len(prompt) > 2000 else prompt)  # Limita a 2000 char
+            self.llm_prompt_text.config(state='disabled')
+            
+            self.llm_output_text.config(state='normal')
+            self.llm_output_text.delete('1.0', tk.END)
+            self.llm_output_text.config(state='disabled')
+            
+            # Switch to LLM tab
+            self.notebook.select(self.llm_frame)
+        
+        self.root.after(0, update)
+    
+    def llm_add_token(self, token, is_final=False):
+        """Aggiunge un token all'output"""
+        def update():
+            self.llm_token_count += 1
+            self.llm_tokens_var.set(f"Token: {self.llm_token_count}")
+            
+            self.llm_output_text.config(state='normal')
+            self.llm_output_text.insert(tk.END, token)
+            self.llm_output_text.config(state='disabled')
+            
+            if self.llm_autoscroll.get():
+                self.llm_output_text.see(tk.END)
+            
+            if is_final:
+                self.llm_output_text.config(state='normal')
+                self.llm_output_text.insert(tk.END, "\n\n--- Generazione completata ---\n")
+                self.llm_output_text.config(state='disabled')
+        
+        self.root.after(0, update)
+
     def _create_stats_tab(self):
         """Tab statistiche nodo"""
         
@@ -789,6 +899,10 @@ class NodeGUI:
                 self.client = NodeClient(self.config_path)
                 self.client.server_url = self.server_url.get()
                 self.client.node_name = self.node_name.get()
+                
+                # Collega callbacks GUI per visualizzare output LLM
+                self.client.gui_prompt_callback = self.llm_set_prompt
+                self.client.gui_token_callback = self.llm_add_token
                 
                 # Passa info hardware e modelli
                 if self.system_info:

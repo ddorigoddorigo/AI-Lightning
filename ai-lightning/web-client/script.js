@@ -656,6 +656,12 @@ function startChatUI() {
     document.getElementById('chat-section').style.display = 'block';
     
     document.getElementById('session-model').textContent = `Model: ${selectedModel?.name || 'Unknown'}`;
+    
+    // Reset dello stato e abilita input
+    isWaitingForResponse = false;
+    currentStreamingMessageId = null;
+    streamingContent = '';
+    
     document.getElementById('prompt').disabled = false;
     document.getElementById('send-btn').disabled = false;
     document.getElementById('prompt').focus();
@@ -755,12 +761,15 @@ function connectSocket() {
     socket.on('session_ready', (data) => {
         hideLoadingOverlay();
         addMessage('System', 'Session ready!');
+        enableInput();
     });
 
     // Streaming: ricevi token singoli
     socket.on('ai_token', (data) => {
         const token = data.token;
         const isFinal = data.is_final;
+        
+        console.log('ai_token received:', {token: token.substring(0, 20), isFinal});
         
         // Rimuovi loading indicator alla prima token
         if (!currentStreamingMessageId) {
@@ -774,8 +783,14 @@ function connectSocket() {
         updateStreamingMessage(currentStreamingMessageId, streamingContent);
         
         if (isFinal) {
-            // Streaming completato per questo chunk
-            // (la risposta finale arriverà con ai_response)
+            // Token finale ricevuto - finalizza il messaggio
+            console.log('Final token received, finalizing...');
+            if (currentStreamingMessageId) {
+                finalizeStreamingMessage(currentStreamingMessageId, streamingContent);
+                currentStreamingMessageId = null;
+                streamingContent = '';
+            }
+            enableInput();
         }
     });
 

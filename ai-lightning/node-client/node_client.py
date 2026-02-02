@@ -439,6 +439,10 @@ class NodeClient:
         self.running = False
         self._connected = False
         
+        # GUI callbacks for LLM output visualization
+        self.gui_prompt_callback = None  # Called with (session_id, prompt)
+        self.gui_token_callback = None   # Called with (token, is_final)
+        
         self._setup_handlers()
     
     def _setup_handlers(self):
@@ -638,6 +642,13 @@ class NodeClient:
             
             llama = self.active_sessions[session_id]
             
+            # Notifica GUI del prompt ricevuto
+            if self.gui_prompt_callback:
+                try:
+                    self.gui_prompt_callback(session_id, prompt)
+                except Exception as e:
+                    logger.error(f"GUI prompt callback error: {e}")
+            
             # Esegui in thread per non bloccare
             def do_inference():
                 if use_streaming:
@@ -653,6 +664,13 @@ class NodeClient:
                         # Logging ogni 10 token per non spammare
                         if token_count <= 3 or token_count % 10 == 0:
                             logger.info(f"[STREAM] Token {token_count} for session {session_id}")
+                        
+                        # Notifica GUI del token
+                        if self.gui_token_callback:
+                            try:
+                                self.gui_token_callback(token, is_final)
+                            except Exception as e:
+                                logger.error(f"GUI token callback error: {e}")
                         
                         try:
                             self.sio.emit('inference_token', {
