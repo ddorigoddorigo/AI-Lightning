@@ -484,9 +484,16 @@ async function createSession() {
 
         const data = await response.json();
         
+        console.log('new_session response:', data);
+        
         if (!response.ok) {
             throw new Error(data.error || 'Failed to create session');
         }
+
+        // IMPORTANTE: Salva session_id PRIMA di tutto il resto
+        currentSession = data.session_id;
+        localStorage.setItem('sessionId', currentSession);
+        console.log('Session created, currentSession:', currentSession);
 
         // Mostra invoice
         document.getElementById('session-config').style.display = 'none';
@@ -494,11 +501,12 @@ async function createSession() {
         document.getElementById('invoice').textContent = data.invoice;
         document.getElementById('invoice-amount').textContent = data.amount;
         
-        // Genera QR code
-        generateQRCode(data.invoice);
-        
-        currentSession = data.session_id;
-        localStorage.setItem('sessionId', currentSession);
+        // Genera QR code (può fallire senza bloccare)
+        try {
+            generateQRCode(data.invoice);
+        } catch (qrError) {
+            console.error('QR code generation failed:', qrError);
+        }
         
     } catch (error) {
         showError(error.message);
@@ -549,6 +557,8 @@ function copyInvoice() {
 }
 
 function checkPayment() {
+    console.log('checkPayment called, currentSession:', currentSession);
+    
     if (!currentSession) {
         showError('No active session');
         return;
