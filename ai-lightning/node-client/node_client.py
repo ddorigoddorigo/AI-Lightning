@@ -644,16 +644,26 @@ class NodeClient:
                     # Streaming: invia token per token
                     token_count = 0
                     start_time = time.time()
+                    last_emit_time = time.time()
                     
                     def token_callback(token, is_final):
-                        nonlocal token_count
+                        nonlocal token_count, last_emit_time
                         token_count += 1
-                        logger.debug(f"Sending token {token_count} for session {session_id}: '{token[:30] if len(token) > 30 else token}'")
-                        self.sio.emit('inference_token', {
-                            'session_id': session_id,
-                            'token': token,
-                            'is_final': is_final
-                        })
+                        
+                        # Logging ogni 10 token per non spammare
+                        if token_count <= 3 or token_count % 10 == 0:
+                            logger.info(f"[STREAM] Token {token_count} for session {session_id}")
+                        
+                        try:
+                            self.sio.emit('inference_token', {
+                                'session_id': session_id,
+                                'token': token,
+                                'is_final': is_final
+                            })
+                            # Piccolo delay per permettere al socket di inviare
+                            time.sleep(0.01)
+                        except Exception as e:
+                            logger.error(f"Error emitting token: {e}")
                     
                     logger.info(f"Starting streaming inference for session {session_id}")
                     result, error = llama.generate_stream(

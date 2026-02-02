@@ -1077,7 +1077,7 @@ def handle_inference_token(data):
     token = data.get('token', '')
     is_final = data.get('is_final', False)
     
-    logger.debug(f"Token received for session {session_id}: '{token[:20]}...' final={is_final}")
+    logger.info(f"[STREAMING] Token for session {session_id}: '{token[:30] if len(token) > 30 else token}' final={is_final}")
     
     # Inoltra token al client
     emit('ai_token', {
