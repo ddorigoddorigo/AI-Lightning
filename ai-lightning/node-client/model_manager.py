@@ -5,12 +5,13 @@ Gestisce i modelli disponibili sul nodo e la sincronizzazione con il server.
 """
 import os
 import json
+import shutil
 import hashlib
 import logging
 import requests
 from pathlib import Path
-from typing import List, Dict, Optional
-from dataclasses import dataclass, asdict
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 
 logger = logging.getLogger('ModelManager')
@@ -18,11 +19,11 @@ logger = logging.getLogger('ModelManager')
 
 @dataclass
 class ModelInfo:
-    """Informazioni su un modello GGUF."""
-    id: str  # Hash del file
+    """Informazioni su un modello GGUF (locale o HuggingFace)."""
+    id: str  # Hash del file o ID HuggingFace
     name: str  # Nome leggibile
-    filename: str  # Nome file
-    filepath: str  # Path completo
+    filename: str  # Nome file (per locali) o repo:quant (per HF)
+    filepath: str  # Path completo (vuoto per HF)
     size_bytes: int
     size_gb: float
     parameters: str  # Es: "7B", "13B", "70B"
@@ -37,6 +38,14 @@ class ModelInfo:
     
     # Stato
     enabled: bool = True
+    
+    # HuggingFace support
+    hf_repo: str = ""  # Es: "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"
+    is_huggingface: bool = False
+    
+    # Usage tracking
+    last_used: str = ""  # ISO timestamp dell'ultimo utilizzo
+    use_count: int = 0  # Numero di utilizzi
 
 
 # Mappatura parametri -> VRAM necessaria (approssimativa per Q4)
@@ -172,6 +181,11 @@ def get_vram_requirements(parameters: str) -> Dict[str, int]:
 class ModelManager:
     """Gestisce i modelli disponibili sul nodo."""
     
+    # Soglia spazio disco critico (5GB)
+    CRITICAL_DISK_SPACE_GB = 5.0
+    # Soglia spazio disco warning (10GB)
+    WARNING_DISK_SPACE_GB = 10.0
+    
     def __init__(self, models_dir: str = None):
         self.models_dir = models_dir or os.path.join(os.getcwd(), 'models')
         self.models: Dict[str, ModelInfo] = {}
@@ -182,6 +196,163 @@ class ModelManager:
         
         # Carica configurazione
         self.load_config()
+    
+    def get_disk_space(self) -> Tuple[float, float, float]:
+        """
+        Ottieni informazioni sullo spazio disco.
+        
+        Returns:
+            Tuple[total_gb, used_gb, free_gb]
+        """
+        try:
+            total, used, free = shutil.disk_usage(self.models_dir)
+            return (
+                total / (1024 ** 3),
+                used / (1024 ** 3),
+                free / (1024 ** 3)
+            )
+        except Exception as e:
+            logger.error(f"Error getting disk space: {e}")
+            return (0.0, 0.0, 0.0)
+    
+    def get_disk_space_status(self) -> Dict:
+        """
+        Ottieni stato spazio disco con warning/critical status.
+        
+        Returns:
+            Dict con total, used, free (in GB) e status ('ok', 'warning', 'critical')
+        """
+        total, used, free = self.get_disk_space()
+        
+        if free < self.CRITICAL_DISK_SPACE_GB:
+            status = 'critical'
+        elif free < self.WARNING_DISK_SPACE_GB:
+            status = 'warning'
+        else:
+            status = 'ok'
+        
+        return {
+            'total_gb': round(total, 2),
+            'used_gb': round(used, 2),
+            'free_gb': round(free, 2),
+            'status': status,
+            'models_size_gb': round(self.get_models_total_size() / (1024 ** 3), 2)
+        }
+    
+    def get_models_total_size(self) -> int:
+        """Calcola dimensione totale dei modelli locali in bytes."""
+        total = 0
+        for model in self.models.values():
+            if not model.is_huggingface and model.filepath and os.path.exists(model.filepath):
+                total += model.size_bytes
+        return total
+    
+    def get_unused_models(self, days_threshold: int = 30) -> List[ModelInfo]:
+        """
+        Ottieni lista modelli non usati da più di X giorni.
+        
+        Args:
+            days_threshold: Numero di giorni di inattività
+            
+        Returns:
+            Lista modelli ordinati per ultimo utilizzo (più vecchi prima)
+        """
+        from datetime import timedelta
+        threshold_date = datetime.now() - timedelta(days=days_threshold)
+        
+        unused = []
+        for model in self.models.values():
+            # Considera solo modelli locali con file esistente
+            if model.is_huggingface:
+                continue
+            if not model.filepath or not os.path.exists(model.filepath):
+                continue
+            
+            # Controlla ultimo utilizzo
+            if model.last_used:
+                try:
+                    last_used_dt = datetime.fromisoformat(model.last_used)
+                    if last_used_dt < threshold_date:
+                        unused.append(model)
+                except:
+                    unused.append(model)  # Data invalida = mai usato
+            else:
+                unused.append(model)  # Mai usato
+        
+        # Ordina per ultimo utilizzo (più vecchi prima)
+        unused.sort(key=lambda m: m.last_used or '1970-01-01')
+        return unused
+    
+    def delete_model(self, model_id: str, delete_file: bool = True) -> bool:
+        """
+        Elimina un modello.
+        
+        Args:
+            model_id: ID del modello
+            delete_file: Se True, elimina anche il file fisico
+            
+        Returns:
+            True se eliminato con successo
+        """
+        if model_id not in self.models:
+            return False
+        
+        model = self.models[model_id]
+        
+        # Elimina file se richiesto e esiste
+        if delete_file and not model.is_huggingface and model.filepath:
+            try:
+                if os.path.exists(model.filepath):
+                    os.remove(model.filepath)
+                    logger.info(f"Deleted model file: {model.filepath}")
+            except Exception as e:
+                logger.error(f"Error deleting model file: {e}")
+                return False
+        
+        # Rimuovi dalla lista
+        del self.models[model_id]
+        self.save_config()
+        
+        logger.info(f"Model {model.name} removed")
+        return True
+    
+    def cleanup_old_models(self, target_free_gb: float = None) -> List[str]:
+        """
+        Pulisce modelli vecchi/non usati per liberare spazio.
+        
+        Args:
+            target_free_gb: Spazio libero target (default: WARNING_DISK_SPACE_GB)
+            
+        Returns:
+            Lista nomi dei modelli eliminati
+        """
+        if target_free_gb is None:
+            target_free_gb = self.WARNING_DISK_SPACE_GB
+        
+        deleted = []
+        _, _, free = self.get_disk_space()
+        
+        # Ottieni modelli non usati
+        unused = self.get_unused_models(days_threshold=30)
+        
+        for model in unused:
+            if free >= target_free_gb:
+                break
+            
+            size_gb = model.size_bytes / (1024 ** 3)
+            if self.delete_model(model.id, delete_file=True):
+                deleted.append(model.name)
+                free += size_gb
+                logger.info(f"Cleaned up model {model.name}, freed {size_gb:.2f} GB")
+        
+        return deleted
+    
+    def mark_model_used(self, model_id: str):
+        """Segna un modello come usato (aggiorna timestamp e contatore)."""
+        if model_id in self.models:
+            self.models[model_id].last_used = datetime.now().isoformat()
+            self.models[model_id].use_count += 1
+            self.save_config()
     
     def load_config(self):
         """Carica configurazione modelli salvata."""
@@ -306,7 +477,7 @@ class ModelManager:
         """
         models = []
         for model in self.get_enabled_models():
-            models.append({
+            model_data = {
                 'id': model.id,
                 'name': model.name,
                 'parameters': model.parameters,
@@ -315,8 +486,15 @@ class ModelManager:
                 'architecture': model.architecture,
                 'size_gb': model.size_gb,
                 'min_vram_mb': model.min_vram_mb,
-                'recommended_vram_mb': model.recommended_vram_mb
-            })
+                'recommended_vram_mb': model.recommended_vram_mb,
+                'is_huggingface': model.is_huggingface
+            }
+            # Aggiungi info HuggingFace se presente
+            if model.hf_repo:
+                model_data['hf_repo'] = model.hf_repo
+            if model.filename:
+                model_data['filename'] = model.filename
+            models.append(model_data)
         return models
     
     def get_model_by_id(self, model_id: str) -> Optional[ModelInfo]:
@@ -329,7 +507,174 @@ class ModelManager:
         for model in self.models.values():
             if name_lower in model.name.lower() or name_lower in model.filename.lower():
                 return model
+            # Cerca anche per hf_repo
+            if model.hf_repo and name_lower in model.hf_repo.lower():
+                return model
         return None
+    
+    def add_huggingface_model(self, hf_repo: str, context_length: int = 4096) -> Optional[ModelInfo]:
+        """
+        Aggiunge un modello HuggingFace.
+        
+        Args:
+            hf_repo: Repository HuggingFace nel formato "owner/repo:quantization"
+                    Es: "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"
+            context_length: Context length da usare
+            
+        Returns:
+            ModelInfo creato o None in caso di errore
+        """
+        try:
+            # Parse del repo HuggingFace
+            parsed = parse_huggingface_repo(hf_repo)
+            
+            # Crea ID unico basato sul repo
+            import hashlib
+            model_id = hashlib.md5(hf_repo.encode()).hexdigest()[:16]
+            
+            # Controlla se già esiste
+            if model_id in self.models:
+                logger.info(f"Model {hf_repo} already exists")
+                return self.models[model_id]
+            
+            # Ottieni requisiti VRAM
+            vram_req = get_vram_requirements(parsed['parameters'])
+            
+            # Stima dimensione (approssimativa basata sui parametri)
+            param_num = 7  # default
+            import re
+            match = re.search(r'(\d+\.?\d*)', parsed['parameters'])
+            if match:
+                param_num = float(match.group(1))
+            
+            # Stima: ~0.5GB per 1B parametri in Q4
+            estimated_size_gb = round(param_num * 0.5, 2)
+            
+            model = ModelInfo(
+                id=model_id,
+                name=parsed['name'],
+                filename=hf_repo,  # Usa repo come "filename"
+                filepath="",  # Vuoto per HF
+                size_bytes=int(estimated_size_gb * 1024**3),
+                size_gb=estimated_size_gb,
+                parameters=parsed['parameters'],
+                quantization=parsed['quantization'],
+                context_length=context_length,
+                architecture=parsed['architecture'],
+                created_at=datetime.now().isoformat(),
+                min_vram_mb=vram_req['min'],
+                recommended_vram_mb=vram_req['rec'],
+                enabled=True,
+                hf_repo=hf_repo,
+                is_huggingface=True
+            )
+            
+            self.models[model_id] = model
+            self.save_config()
+            logger.info(f"Added HuggingFace model: {model.name} ({hf_repo})")
+            
+            return model
+            
+        except Exception as e:
+            logger.error(f"Error adding HuggingFace model {hf_repo}: {e}")
+            return None
+    
+    def remove_model(self, model_id: str) -> bool:
+        """Rimuove un modello."""
+        if model_id in self.models:
+            model = self.models[model_id]
+            del self.models[model_id]
+            self.save_config()
+            logger.info(f"Removed model: {model.name}")
+            return True
+        return False
+
+
+def parse_huggingface_repo(hf_repo: str) -> Dict:
+    """
+    Estrae informazioni da un repository HuggingFace.
+    
+    Formati supportati:
+    - "owner/repo:quantization" (es: "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M")
+    - "owner/repo" (senza quantizzazione specifica)
+    """
+    info = {
+        'name': hf_repo,
+        'parameters': 'Unknown',
+        'quantization': 'Unknown',
+        'architecture': 'unknown',
+        'owner': '',
+        'repo': ''
+    }
+    
+    # Split owner/repo:quant
+    parts = hf_repo.split(':')
+    repo_part = parts[0]
+    quant_part = parts[1] if len(parts) > 1 else ''
+    
+    # Split owner/repo
+    if '/' in repo_part:
+        owner, repo = repo_part.split('/', 1)
+        info['owner'] = owner
+        info['repo'] = repo
+    else:
+        info['repo'] = repo_part
+    
+    repo_lower = repo_part.lower()
+    
+    # Rileva architettura
+    architectures = [
+        'llama', 'mistral', 'mixtral', 'phi', 'qwen', 'gemma', 
+        'deepseek', 'codellama', 'starcoder', 'falcon', 'yi',
+        'vicuna', 'wizard', 'orca', 'neural', 'openchat', 'smollm'
+    ]
+    for arch in architectures:
+        if arch in repo_lower:
+            info['architecture'] = arch
+            break
+    
+    # Rileva parametri
+    import re
+    param_match = re.search(r'(\d+\.?\d*)\s*[bB]', repo_part)
+    if param_match:
+        param_num = float(param_match.group(1))
+        if param_num < 1:
+            info['parameters'] = f"{int(param_num * 1000)}M"
+        else:
+            info['parameters'] = f"{int(param_num)}B" if param_num == int(param_num) else f"{param_num}B"
+    
+    # Rileva quantizzazione
+    if quant_part:
+        info['quantization'] = quant_part.upper()
+    else:
+        # Cerca nella stringa
+        quant_patterns = [
+            r'[._-](Q\d+_K_[SMLX]+)', r'[._-](Q\d+_K)', r'[._-](Q\d+_\d+)',
+            r'[._-](Q\d+)', r'[._-](F16)', r'[._-](F32)', r'[._-](BF16)',
+            r'[._-](IQ\d+_[SMLX]+)', r'[._-](IQ\d+)'
+        ]
+        for pattern in quant_patterns:
+            match = re.search(pattern, repo_part, re.IGNORECASE)
+            if match:
+                info['quantization'] = match.group(1).upper()
+                break
+    
+    # Crea nome leggibile
+    name_parts = []
+    if info['architecture'] != 'unknown':
+        name_parts.append(info['architecture'].capitalize())
+    if info['parameters'] != 'Unknown':
+        name_parts.append(info['parameters'])
+    if info['quantization'] != 'Unknown':
+        name_parts.append(info['quantization'])
+    
+    if name_parts:
+        info['name'] = ' '.join(name_parts)
+    else:
+        # Usa repo name
+        info['name'] = info['repo'].replace('-GGUF', '').replace('-gguf', '')
+    
+    return info
 
 
 class ModelSyncClient:

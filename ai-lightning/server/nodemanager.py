@@ -28,7 +28,7 @@ class NodeManager:
         # Set per tracciare i nodi (più efficiente di KEYS)
         self.nodes_set_key = "registered_nodes"
 
-    def register_node(self, user_id, address, models):
+    def register_node(self, user_id, address, models, payment_address=None):
         """
         Registra un nuovo nodo.
 
@@ -36,6 +36,7 @@ class NodeManager:
             user_id: ID dell'utente proprietario
             address: Indirizzo IP del nodo
             models: Dict di modelli offerti {name: path}
+            payment_address: Lightning address for direct payments (LNURL, BOLT12, or node pubkey)
 
         Returns:
             str: ID del nodo
@@ -50,7 +51,9 @@ class NodeManager:
                 'models': json.dumps(models),
                 'status': 'online',
                 'last_ping': datetime.utcnow().timestamp(),
-                'load': 0
+                'load': 0,
+                'payment_address': payment_address or '',
+                'total_earned': 0
             }
         )
         # Aggiungi al set dei nodi registrati (più efficiente di KEYS)
@@ -216,26 +219,107 @@ class NodeManager:
         except Exception as e:
             logger.error(f"Error stopping session on node {node_id}: {e}")
 
-    def pay_node(self, node_id, amount, description):
+    def pay_node(self, node_id, amount, description, lightning_manager=None):
         """
         Paga un nodo per una sessione.
+        
+        Se il nodo ha un payment_address (Lightning), paga direttamente via Lightning.
+        Altrimenti, accredita il balance dell'utente proprietario.
+        
+        La commissione della piattaforma è calcolata dal chiamante (Config.NODE_PAYMENT_RATIO).
 
         Args:
             node_id: ID del nodo
-            amount: Importo in satoshis
+            amount: Importo in satoshis (già al netto della commissione piattaforma)
             description: Descrizione del pagamento
+            lightning_manager: LightningManager instance per pagamenti diretti
+        
+        Returns:
+            dict: {'success': bool, 'method': 'lightning'|'balance', 'error': str|None}
         """
         node_data = self.redis.hgetall(f"node:{node_id}")
+        if not node_data:
+            return {'success': False, 'method': None, 'error': 'Node not found'}
+        
         user_id = int(node_data[b'user_id'])
+        payment_address = node_data.get(b'payment_address', b'').decode()
 
         from models import db, User, Transaction
-        with db.session.begin():
-            owner = User.query.get(user_id)
-            owner.balance += amount
+        
+        # Se ha un Lightning address, prova a pagare direttamente
+        if payment_address and lightning_manager:
+            try:
+                # Il payment_address può essere:
+                # 1. LNURL (lnurl1...) - richiede risoluzione
+                # 2. Lightning Address (user@domain.com) - richiede risoluzione
+                # 3. Node pubkey + payment request - il nodo genera invoice on-demand
+                
+                # Per ora, assumiamo che il nodo generi una invoice via callback
+                # Chiediamo al nodo di generare una invoice per l'importo
+                node_address = node_data[b'address'].decode()
+                
+                try:
+                    # Richiedi invoice al nodo
+                    invoice_response = httpx.post(
+                        f"http://{node_address}:9000/api/create_invoice",
+                        json={'amount': amount, 'description': description},
+                        timeout=10
+                    )
+                    
+                    if invoice_response.status_code == 200:
+                        invoice_data = invoice_response.json()
+                        payment_request = invoice_data.get('payment_request')
+                        
+                        if payment_request:
+                            # Paga la invoice
+                            pay_result = lightning_manager.pay_invoice(payment_request)
+                            
+                            if pay_result.get('success'):
+                                # Aggiorna earnings del nodo
+                                self.redis.hincrby(f"node:{node_id}", 'total_earned', amount)
+                                
+                                # Registra transazione
+                                with db.session.begin():
+                                    db.session.add(Transaction(
+                                        type='node_payment',
+                                        user_id=user_id,
+                                        amount=amount,
+                                        description=f"Lightning payment: {description}"
+                                    ))
+                                
+                                logger.info(f"Paid {amount} sats to node {node_id} via Lightning")
+                                return {'success': True, 'method': 'lightning', 'error': None}
+                            else:
+                                logger.warning(f"Lightning payment failed: {pay_result.get('error')}")
+                                # Fallback al balance
+                except httpx.RequestError as e:
+                    logger.warning(f"Could not request invoice from node: {e}")
+                    # Fallback al balance
+                    
+            except Exception as e:
+                logger.warning(f"Lightning payment error: {e}")
+                # Fallback al balance
+        
+        # Fallback: accredita balance dell'utente
+        try:
+            with db.session.begin():
+                owner = User.query.get(user_id)
+                if owner:
+                    owner.balance += amount
 
-            db.session.add(Transaction(
-                type='deposit',
-                user_id=user_id,
-                amount=amount,
-                description=description
-            ))
+                    db.session.add(Transaction(
+                        type='node_earning',
+                        user_id=user_id,
+                        amount=amount,
+                        description=description
+                    ))
+                    
+                    # Aggiorna earnings del nodo
+                    self.redis.hincrby(f"node:{node_id}", 'total_earned', amount)
+            
+            logger.info(f"Credited {amount} sats to node {node_id} owner balance")
+            return {'success': True, 'method': 'balance', 'error': None}
+            
+        except Exception as e:
+            logger.error(f"Failed to credit node owner: {e}")
+            return {'success': False, 'method': None, 'error': str(e)}

@@ -13,6 +13,11 @@ from pathlib import Path
 from configparser import ConfigParser
 from datetime import datetime
 
+try:
+    import requests
+except ImportError:
+    requests = None
+
 # Aggiungi path per imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -85,6 +90,11 @@ class NodeGUI:
         self.log_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.log_frame, text="📝 Log")
         self._create_log_tab()
+        
+        # === Tab 6: Statistiche ===
+        self.stats_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.stats_frame, text="📈 Statistiche")
+        self._create_stats_tab()
         
         # Status bar
         status_frame = ttk.Frame(self.root)
@@ -187,14 +197,15 @@ class NodeGUI:
         self.conn_details = tk.StringVar(value="")
         ttk.Label(status_frame, textvariable=self.conn_details, font=('Arial', 9)).pack(anchor='w', pady=5)
         
-        # llama.cpp settings
-        llama_frame = ttk.LabelFrame(self.conn_frame, text="Configurazione llama.cpp", padding=10)
+        # llama-server settings
+        llama_frame = ttk.LabelFrame(self.conn_frame, text="Configurazione llama-server", padding=10)
         llama_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        ttk.Label(llama_frame, text="Percorso llama-server:").grid(row=0, column=0, sticky='w', pady=5)
-        self.llama_path = tk.StringVar()
-        ttk.Entry(llama_frame, textvariable=self.llama_path, width=50).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+        ttk.Label(llama_frame, text="Comando llama-server:").grid(row=0, column=0, sticky='w', pady=5)
+        self.llama_command = tk.StringVar(value="llama-server")
+        ttk.Entry(llama_frame, textvariable=self.llama_command, width=50).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
         ttk.Button(llama_frame, text="...", command=self.browse_llama, width=3).grid(row=0, column=2)
+        ttk.Label(llama_frame, text="(lascia 'llama-server' se è nel PATH)", font=('Arial', 8)).grid(row=0, column=3, sticky='w', padx=5)
         
         ttk.Label(llama_frame, text="GPU Layers (-ngl):").grid(row=1, column=0, sticky='w', pady=5)
         self.gpu_layers = tk.StringVar(value="99")
@@ -212,7 +223,20 @@ class NodeGUI:
         
         ttk.Button(toolbar, text="📁 Seleziona Cartella Modelli", command=self._select_models_folder).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="🔄 Scansiona", command=self._scan_models).pack(side=tk.LEFT, padx=5)
+        ttk.Button(toolbar, text="🤗 Aggiungi HuggingFace", command=self._add_huggingface_model).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="☁️ Sincronizza con Server", command=self._sync_models).pack(side=tk.LEFT, padx=5)
+        ttk.Button(toolbar, text="🗑️ Rimuovi", command=self._remove_selected_model).pack(side=tk.LEFT, padx=5)
+        ttk.Button(toolbar, text="🧹 Pulisci Vecchi", command=self._cleanup_old_models).pack(side=tk.LEFT, padx=5)
+        
+        # Info spazio disco
+        disk_frame = ttk.LabelFrame(self.models_frame, text="📊 Spazio Disco", padding=5)
+        disk_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.disk_info_var = tk.StringVar(value="Verificando spazio disco...")
+        self.disk_info_label = ttk.Label(disk_frame, textvariable=self.disk_info_var, font=('Arial', 9))
+        self.disk_info_label.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(disk_frame, text="🔄", command=self._update_disk_info, width=3).pack(side=tk.RIGHT, padx=5)
         
         # Cartella modelli
         folder_frame = ttk.Frame(self.models_frame)
@@ -223,14 +247,15 @@ class NodeGUI:
         ttk.Label(folder_frame, textvariable=self.models_folder, font=('Arial', 9)).pack(side=tk.LEFT, padx=10)
         
         # Lista modelli con checkbox
-        list_frame = ttk.LabelFrame(self.models_frame, text="Modelli Disponibili", padding=5)
+        list_frame = ttk.LabelFrame(self.models_frame, text="Modelli Disponibili (Locali e HuggingFace)", padding=5)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Treeview per modelli
-        columns = ('enabled', 'name', 'params', 'quant', 'size', 'vram', 'context')
+        columns = ('enabled', 'source', 'name', 'params', 'quant', 'size', 'vram', 'context')
         self.models_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=10)
         
         self.models_tree.heading('enabled', text='✓')
+        self.models_tree.heading('source', text='Fonte')
         self.models_tree.heading('name', text='Nome')
         self.models_tree.heading('params', text='Parametri')
         self.models_tree.heading('quant', text='Quantiz.')
@@ -239,12 +264,13 @@ class NodeGUI:
         self.models_tree.heading('context', text='Context')
         
         self.models_tree.column('enabled', width=30, anchor='center')
-        self.models_tree.column('name', width=200)
-        self.models_tree.column('params', width=80, anchor='center')
-        self.models_tree.column('quant', width=80, anchor='center')
-        self.models_tree.column('size', width=80, anchor='center')
-        self.models_tree.column('vram', width=80, anchor='center')
-        self.models_tree.column('context', width=80, anchor='center')
+        self.models_tree.column('source', width=60, anchor='center')
+        self.models_tree.column('name', width=180)
+        self.models_tree.column('params', width=70, anchor='center')
+        self.models_tree.column('quant', width=70, anchor='center')
+        self.models_tree.column('size', width=70, anchor='center')
+        self.models_tree.column('vram', width=70, anchor='center')
+        self.models_tree.column('context', width=70, anchor='center')
         
         self.models_tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
         
@@ -350,6 +376,69 @@ class NodeGUI:
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.log_text.config(state='disabled')
     
+    def _create_stats_tab(self):
+        """Tab statistiche nodo"""
+        
+        # Frame principale con padding
+        main_frame = ttk.Frame(self.stats_frame, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Titolo
+        title_label = ttk.Label(main_frame, text="📈 Statistiche del Nodo", style='Header.TLabel', font=('Arial', 14, 'bold'))
+        title_label.pack(pady=(0, 15))
+        
+        # Frame statistiche
+        stats_container = ttk.LabelFrame(main_frame, text="Riepilogo", padding="15")
+        stats_container.pack(fill=tk.X, pady=10)
+        
+        # Grid per statistiche
+        self.stats_vars = {}
+        stats_labels = [
+            ('total_sessions', '🔗 Sessioni Totali', '0'),
+            ('completed_sessions', '✅ Sessioni Completate', '0'),
+            ('failed_sessions', '❌ Sessioni Fallite', '0'),
+            ('total_requests', '📤 Richieste Elaborate', '0'),
+            ('total_tokens', '🔤 Token Generati', '0'),
+            ('total_minutes', '⏱️ Minuti di Attività', '0'),
+            ('total_earned', '⚡ Satoshi Guadagnati', '0'),
+            ('avg_tokens_sec', '🚀 Token/secondo (media)', '0.0'),
+            ('avg_response_ms', '⏳ Tempo Risposta (media)', '0 ms'),
+            ('first_online', '📅 Prima Connessione', '-'),
+            ('last_online', '🕐 Ultima Attività', '-'),
+            ('uptime_hours', '📊 Ore Totali Online', '0'),
+        ]
+        
+        for i, (key, label, default) in enumerate(stats_labels):
+            row = i // 2
+            col = (i % 2) * 2
+            
+            ttk.Label(stats_container, text=label + ":", style='Info.TLabel').grid(
+                row=row, column=col, sticky='e', padx=(10, 5), pady=5
+            )
+            
+            self.stats_vars[key] = tk.StringVar(value=default)
+            ttk.Label(stats_container, textvariable=self.stats_vars[key], font=('Arial', 10, 'bold')).grid(
+                row=row, column=col+1, sticky='w', padx=(0, 20), pady=5
+            )
+        
+        # Configura colonne
+        for col in range(4):
+            stats_container.columnconfigure(col, weight=1)
+        
+        # Frame pulsanti
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=20)
+        
+        ttk.Button(btn_frame, text="🔄 Aggiorna Statistiche", command=self._load_stats).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="📋 Copia Report", command=self._copy_stats_report).pack(side=tk.LEFT, padx=5)
+        
+        # Nota
+        note_label = ttk.Label(main_frame, 
+            text="ℹ️ Le statistiche vengono aggiornate automaticamente durante le sessioni.\n"
+                 "   Clicca 'Aggiorna' per ottenere i dati più recenti dal server.",
+            style='Info.TLabel', foreground='gray')
+        note_label.pack(pady=10)
+    
     # === Hardware Detection ===
     
     def _detect_hardware(self):
@@ -432,6 +521,7 @@ class NodeGUI:
             try:
                 models = self.model_manager.scan_models()
                 self.root.after(0, lambda: self._update_models_list(models))
+                self.root.after(0, self._update_disk_info)  # Aggiorna anche spazio disco
             except Exception as e:
                 self.root.after(0, lambda: self.log(f"Errore scansione: {e}"))
         
@@ -446,8 +536,11 @@ class NodeGUI:
         # Aggiungi modelli
         for model in models:
             enabled = '✓' if model.enabled else '✗'
+            # Indica se è HuggingFace o locale
+            source = '🤗 HF' if getattr(model, 'is_huggingface', False) else '📁 Local'
             self.models_tree.insert('', 'end', iid=model.id, values=(
                 enabled,
+                source,
                 model.name,
                 model.parameters,
                 model.quantization,
@@ -472,7 +565,7 @@ class NodeGUI:
                 new_state = not model.enabled
                 self.model_manager.set_model_enabled(model_id, new_state)
                 
-                # Aggiorna UI
+                # Aggiorna UI (prima colonna è enabled)
                 enabled = '✓' if new_state else '✗'
                 values = list(self.models_tree.item(model_id, 'values'))
                 values[0] = enabled
@@ -486,11 +579,44 @@ class NodeGUI:
         
         model = self.model_manager.get_model_by_id(item[0])
         if model:
-            details = f"File: {model.filename}\n"
+            if getattr(model, 'is_huggingface', False):
+                details = f"🤗 HuggingFace: {model.hf_repo}\n"
+            else:
+                details = f"📁 File: {model.filename}\n"
             details += f"Architettura: {model.architecture}\n"
             details += f"VRAM: {model.min_vram_mb} MB min, {model.recommended_vram_mb} MB raccomandati"
             self.model_details.set(details)
             self.model_context.set(str(model.context_length))
+    
+    def _add_huggingface_model(self):
+        """Apri dialog per aggiungere modello HuggingFace"""
+        # Crea model_manager se non esiste (usa directory corrente per config)
+        if not self.model_manager:
+            self._init_model_manager(os.getcwd())
+        
+        dialog = HuggingFaceModelDialog(self.root, self.model_manager)
+        if dialog.result:
+            # Modello aggiunto, aggiorna lista
+            if self.model_manager:
+                models = list(self.model_manager.models.values())
+                self._update_models_list(models)
+                self.log(f"Aggiunto modello HuggingFace: {dialog.result.name}")
+    
+    def _remove_selected_model(self):
+        """Rimuovi il modello selezionato"""
+        item = self.models_tree.selection()
+        if not item:
+            messagebox.showwarning("Attenzione", "Seleziona un modello da rimuovere")
+            return
+        
+        model_id = item[0]
+        if self.model_manager:
+            model = self.model_manager.get_model_by_id(model_id)
+            if model:
+                if messagebox.askyesno("Conferma", f"Rimuovere il modello '{model.name}' dalla lista?\n\n(Questo non elimina il file dal disco)"):
+                    self.model_manager.remove_model(model_id)
+                    self.models_tree.delete(model_id)
+                    self.log(f"Rimosso modello: {model.name}")
     
     def _apply_context(self):
         """Applica context length"""
@@ -502,9 +628,9 @@ class NodeGUI:
             context = int(self.model_context.get())
             self.model_manager.set_model_context_length(item[0], context)
             
-            # Aggiorna UI
+            # Aggiorna UI (context è ora la colonna 7, indice 7)
             values = list(self.models_tree.item(item[0], 'values'))
-            values[6] = context
+            values[7] = context
             self.models_tree.item(item[0], values=values)
             
             self.update_status(f"Context length aggiornato a {context}")
@@ -534,6 +660,79 @@ class NodeGUI:
         
         threading.Thread(target=sync, daemon=True).start()
     
+    def _update_disk_info(self):
+        """Aggiorna informazioni spazio disco"""
+        if not self.model_manager:
+            self.disk_info_var.set("Seleziona prima una cartella modelli")
+            return
+        
+        status = self.model_manager.get_disk_space_status()
+        
+        status_icon = "✅" if status['status'] == 'ok' else "⚠️" if status['status'] == 'warning' else "❌"
+        status_text = (
+            f"{status_icon} Libero: {status['free_gb']:.1f} GB / {status['total_gb']:.1f} GB | "
+            f"Modelli: {status['models_size_gb']:.1f} GB"
+        )
+        self.disk_info_var.set(status_text)
+        
+        # Colore in base allo stato
+        if status['status'] == 'critical':
+            self.disk_info_label.config(foreground='red')
+            # Avvisa l'utente
+            if messagebox.askyesno("⚠️ Spazio Disco Critico",
+                f"Spazio disco quasi esaurito: solo {status['free_gb']:.1f} GB liberi.\n\n"
+                "Vuoi eliminare i modelli vecchi/non usati per liberare spazio?"):
+                self._cleanup_old_models()
+        elif status['status'] == 'warning':
+            self.disk_info_label.config(foreground='orange')
+        else:
+            self.disk_info_label.config(foreground='green')
+    
+    def _cleanup_old_models(self):
+        """Pulisci modelli vecchi/non usati"""
+        if not self.model_manager:
+            messagebox.showwarning("Attenzione", "Seleziona prima una cartella modelli")
+            return
+        
+        # Ottieni modelli non usati
+        unused = self.model_manager.get_unused_models(days_threshold=30)
+        
+        if not unused:
+            messagebox.showinfo("Pulizia Modelli", "Non ci sono modelli da pulire.\n\nTutti i modelli sono stati usati negli ultimi 30 giorni.")
+            return
+        
+        # Calcola spazio che si libererebbe
+        total_size = sum(m.size_bytes for m in unused if not m.is_huggingface)
+        total_size_gb = total_size / (1024 ** 3)
+        
+        # Mostra lista modelli
+        models_list = "\n".join([f"• {m.name} ({m.size_gb:.2f} GB)" for m in unused[:10]])
+        if len(unused) > 10:
+            models_list += f"\n... e altri {len(unused) - 10} modelli"
+        
+        if messagebox.askyesno("🧹 Pulizia Modelli",
+            f"Trovati {len(unused)} modelli non usati negli ultimi 30 giorni.\n\n"
+            f"Modelli da eliminare:\n{models_list}\n\n"
+            f"Spazio che verrà liberato: {total_size_gb:.2f} GB\n\n"
+            "Vuoi eliminarli?"):
+            
+            deleted = []
+            for model in unused:
+                if not model.is_huggingface:  # Non eliminare modelli HF (non hanno file locale)
+                    if self.model_manager.delete_model(model.id, delete_file=True):
+                        deleted.append(model.name)
+            
+            # Aggiorna UI
+            self._scan_models()
+            self._update_disk_info()
+            
+            if deleted:
+                messagebox.showinfo("Pulizia Completata",
+                    f"Eliminati {len(deleted)} modelli:\n" + "\n".join([f"• {n}" for n in deleted[:10]]))
+                self.log(f"Pulizia: eliminati {len(deleted)} modelli, liberati {total_size_gb:.2f} GB")
+            else:
+                messagebox.showinfo("Pulizia", "Nessun modello eliminato")
+    
     # === Connection ===
     
     def _load_config(self):
@@ -544,7 +743,11 @@ class NodeGUI:
             self.server_url.set(self.config.get('Server', 'URL', fallback='http://vps-eecab539.vps.ovh.net'))
             self.node_name.set(self.config.get('Node', 'name', fallback=''))
             self.token.set(self.config.get('Node', 'token', fallback=''))
-            self.llama_path.set(self.config.get('LLM', 'bin', fallback=''))
+            # Supporta sia il nuovo 'command' che il vecchio 'bin'
+            llama_cmd = self.config.get('LLM', 'command', fallback='')
+            if not llama_cmd:
+                llama_cmd = self.config.get('LLM', 'bin', fallback='llama-server')
+            self.llama_command.set(llama_cmd)
             self.gpu_layers.set(self.config.get('LLM', 'gpu_layers', fallback='99'))
             
             models_dir = self.config.get('Models', 'directory', fallback='')
@@ -552,10 +755,10 @@ class NodeGUI:
                 self.models_folder.set(models_dir)
                 self._init_model_manager(models_dir)
         else:
-            # Auto-rileva llama.cpp
-            llama_bin = find_llama_binary()
-            if llama_bin:
-                self.llama_path.set(llama_bin)
+            # Auto-rileva llama-server
+            llama_cmd = find_llama_binary()
+            if llama_cmd:
+                self.llama_command.set(llama_cmd)
     
     def _save_config(self):
         """Salva configurazione"""
@@ -566,7 +769,7 @@ class NodeGUI:
         self.config['Server']['URL'] = self.server_url.get()
         self.config['Node']['name'] = self.node_name.get()
         self.config['Node']['token'] = self.token.get()
-        self.config['LLM']['bin'] = self.llama_path.get()
+        self.config['LLM']['command'] = self.llama_command.get()
         self.config['LLM']['gpu_layers'] = self.gpu_layers.get()
         self.config['Models']['directory'] = self.models_folder.get()
         
@@ -644,11 +847,11 @@ class NodeGUI:
         self.log("Disconnesso dal server")
     
     def browse_llama(self):
-        """Sfoglia per llama-server"""
+        """Sfoglia per llama-server (opzionale, può essere nel PATH)"""
         filetypes = [("Executable", "*.exe"), ("All files", "*.*")] if sys.platform == 'win32' else [("All files", "*.*")]
         path = filedialog.askopenfilename(filetypes=filetypes)
         if path:
-            self.llama_path.set(path)
+            self.llama_command.set(path)
     
     # === Sessions ===
     
@@ -691,6 +894,152 @@ class NodeGUI:
             self.log_text.config(state='disabled')
             self.update_status(f"Log salvato in {path}")
     
+    # === Statistiche ===
+    
+    def _load_stats(self):
+        """Carica statistiche dal server"""
+        if not self.client or not self.client.connected:
+            messagebox.showwarning("Non connesso", "Devi essere connesso al server per caricare le statistiche.")
+            return
+        
+        if requests is None:
+            messagebox.showerror("Modulo mancante", "Il modulo 'requests' non è installato. Esegui: pip install requests")
+            return
+        
+        # Ottieni node_id dal client
+        node_id = getattr(self.client, 'node_id', None)
+        if not node_id:
+            messagebox.showwarning("ID Nodo mancante", "ID del nodo non disponibile. Riconnettiti al server.")
+            return
+        
+        self.update_status("Caricamento statistiche...")
+        
+        def fetch_stats():
+            try:
+                server_url = self.client.server_url.replace('/socket.io', '')
+                # Rimuovi trailing slashes
+                server_url = server_url.rstrip('/')
+                
+                # Richiesta API statistiche
+                response = requests.get(f"{server_url}/api/node/stats/{node_id}", timeout=10)
+                
+                if response.status_code == 200:
+                    stats = response.json()
+                    self.root.after(0, lambda: self._update_stats_display(stats))
+                elif response.status_code == 404:
+                    # Nessuna statistica ancora
+                    self.root.after(0, lambda: self._update_stats_display({}))
+                    self.root.after(0, lambda: self.log("Nessuna statistica disponibile (nodo nuovo)"))
+                else:
+                    self.root.after(0, lambda: self.log(f"Errore caricamento statistiche: {response.status_code}"))
+            except Exception as e:
+                self.root.after(0, lambda: self.log(f"Errore caricamento statistiche: {e}"))
+                self.root.after(0, lambda: self.update_status("Errore caricamento statistiche"))
+        
+        threading.Thread(target=fetch_stats, daemon=True).start()
+    
+    def _update_stats_display(self, stats):
+        """Aggiorna display statistiche"""
+        try:
+            self.stats_vars['total_sessions'].set(str(stats.get('total_sessions', 0)))
+            self.stats_vars['completed_sessions'].set(str(stats.get('completed_sessions', 0)))
+            self.stats_vars['failed_sessions'].set(str(stats.get('failed_sessions', 0)))
+            self.stats_vars['total_requests'].set(str(stats.get('total_requests', 0)))
+            
+            # Formatta token con separatori migliaia
+            tokens = stats.get('total_tokens_generated', 0)
+            self.stats_vars['total_tokens'].set(f"{tokens:,}".replace(',', '.'))
+            
+            # Formatta minuti
+            minutes = stats.get('total_minutes_active', 0)
+            if minutes >= 60:
+                hours = minutes // 60
+                mins = minutes % 60
+                self.stats_vars['total_minutes'].set(f"{hours}h {mins}m")
+            else:
+                self.stats_vars['total_minutes'].set(f"{minutes} min")
+            
+            # Satoshi guadagnati
+            sats = stats.get('total_earned_sats', 0)
+            self.stats_vars['total_earned'].set(f"{sats:,} sats".replace(',', '.'))
+            
+            # Medie
+            avg_tps = stats.get('avg_tokens_per_second', 0)
+            self.stats_vars['avg_tokens_sec'].set(f"{avg_tps:.1f}")
+            
+            avg_ms = stats.get('avg_response_time_ms', 0)
+            self.stats_vars['avg_response_ms'].set(f"{avg_ms:.0f} ms")
+            
+            # Date
+            first_online = stats.get('first_online')
+            if first_online:
+                try:
+                    dt = datetime.fromisoformat(first_online.replace('Z', '+00:00'))
+                    self.stats_vars['first_online'].set(dt.strftime('%d/%m/%Y %H:%M'))
+                except:
+                    self.stats_vars['first_online'].set(first_online[:16])
+            else:
+                self.stats_vars['first_online'].set('-')
+            
+            last_online = stats.get('last_online')
+            if last_online:
+                try:
+                    dt = datetime.fromisoformat(last_online.replace('Z', '+00:00'))
+                    self.stats_vars['last_online'].set(dt.strftime('%d/%m/%Y %H:%M'))
+                except:
+                    self.stats_vars['last_online'].set(last_online[:16])
+            else:
+                self.stats_vars['last_online'].set('-')
+            
+            # Uptime
+            uptime = stats.get('total_uptime_hours', 0)
+            self.stats_vars['uptime_hours'].set(f"{uptime:.1f}")
+            
+            self.update_status("Statistiche aggiornate")
+            self.log("Statistiche caricate dal server")
+            
+        except Exception as e:
+            self.log(f"Errore aggiornamento display statistiche: {e}")
+    
+    def _copy_stats_report(self):
+        """Copia report statistiche negli appunti"""
+        report_lines = [
+            "=" * 40,
+            "  REPORT STATISTICHE NODO AI LIGHTNING",
+            "=" * 40,
+            "",
+            f"📊 Sessioni Totali:        {self.stats_vars['total_sessions'].get()}",
+            f"✅ Sessioni Completate:    {self.stats_vars['completed_sessions'].get()}",
+            f"❌ Sessioni Fallite:       {self.stats_vars['failed_sessions'].get()}",
+            "",
+            f"📤 Richieste Elaborate:    {self.stats_vars['total_requests'].get()}",
+            f"🔤 Token Generati:         {self.stats_vars['total_tokens'].get()}",
+            f"⏱️ Tempo Attività:         {self.stats_vars['total_minutes'].get()}",
+            "",
+            f"⚡ Satoshi Guadagnati:     {self.stats_vars['total_earned'].get()}",
+            "",
+            f"🚀 Token/secondo (media):  {self.stats_vars['avg_tokens_sec'].get()}",
+            f"⏳ Tempo Risposta (media): {self.stats_vars['avg_response_ms'].get()}",
+            "",
+            f"📅 Prima Connessione:      {self.stats_vars['first_online'].get()}",
+            f"🕐 Ultima Attività:        {self.stats_vars['last_online'].get()}",
+            f"📊 Ore Totali Online:      {self.stats_vars['uptime_hours'].get()}",
+            "",
+            "=" * 40,
+            f"  Report generato: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+            "=" * 40,
+        ]
+        
+        report = "\n".join(report_lines)
+        
+        # Copia negli appunti
+        self.root.clipboard_clear()
+        self.root.clipboard_append(report)
+        self.root.update()
+        
+        self.update_status("Report copiato negli appunti")
+        messagebox.showinfo("Copiato", "Report statistiche copiato negli appunti!")
+    
     # === App Lifecycle ===
     
     def on_close(self):
@@ -703,6 +1052,290 @@ class NodeGUI:
     def run(self):
         """Avvia GUI"""
         self.root.mainloop()
+
+
+class HuggingFaceModelDialog:
+    """Dialog per aggiungere un modello HuggingFace"""
+    
+    def __init__(self, parent, model_manager):
+        self.result = None
+        self.model_manager = model_manager
+        self.verified = False
+        
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Aggiungi Modello HuggingFace")
+        self.dialog.geometry("600x500")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # Istruzioni
+        info_frame = ttk.LabelFrame(self.dialog, text="Istruzioni", padding=10)
+        info_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        info_text = """Inserisci il repository HuggingFace nel formato:
+owner/repo:quantizzazione
+
+Esempi:
+• bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M
+• unsloth/Llama-3.2-3B-Instruct-GGUF:Q4_K_M
+• Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
+
+Il modello verrà scaricato automaticamente da HuggingFace quando avvii una sessione."""
+        
+        ttk.Label(info_frame, text=info_text, justify=tk.LEFT, font=('Arial', 9)).pack(anchor='w')
+        
+        # Spazio disco
+        disk_frame = ttk.LabelFrame(self.dialog, text="📊 Spazio Disco", padding=10)
+        disk_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.disk_status_var = tk.StringVar(value="Verificando spazio disco...")
+        self.disk_status_label = ttk.Label(disk_frame, textvariable=self.disk_status_var, font=('Arial', 9))
+        self.disk_status_label.pack(anchor='w')
+        
+        # Aggiorna info disco
+        self._update_disk_status()
+        
+        # Input
+        input_frame = ttk.LabelFrame(self.dialog, text="Repository HuggingFace", padding=10)
+        input_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(input_frame, text="Repo (owner/model:quant):").pack(anchor='w')
+        self.repo_var = tk.StringVar()
+        self.repo_entry = ttk.Entry(input_frame, textvariable=self.repo_var, width=60)
+        self.repo_entry.pack(fill=tk.X, pady=5)
+        self.repo_entry.focus_set()
+        
+        # Bind per reset verifica quando cambia il testo
+        self.repo_var.trace_add('write', self._on_repo_changed)
+        
+        ttk.Label(input_frame, text="Context Length:").pack(anchor='w', pady=(10, 0))
+        self.context_var = tk.StringVar(value="4096")
+        ttk.Spinbox(input_frame, textvariable=self.context_var, from_=512, to=131072, width=15).pack(anchor='w', pady=5)
+        
+        # Status verifica
+        self.verify_status_var = tk.StringVar(value="")
+        self.verify_status_label = ttk.Label(input_frame, textvariable=self.verify_status_var, font=('Arial', 9))
+        self.verify_status_label.pack(anchor='w', pady=5)
+        
+        # Preset modelli popolari
+        preset_frame = ttk.LabelFrame(self.dialog, text="Modelli Popolari (clicca per usare)", padding=10)
+        preset_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        presets = [
+            ("Llama 3.2 1B", "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"),
+            ("Llama 3.2 3B", "unsloth/Llama-3.2-3B-Instruct-GGUF:Q4_K_M"),
+            ("Qwen 2.5 1.5B", "Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"),
+            ("SmolLM2 1.7B", "HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF:Q4_K_M"),
+            ("Phi-3 Mini", "bartowski/Phi-3.5-mini-instruct-GGUF:Q4_K_M"),
+        ]
+        
+        for name, repo in presets:
+            btn = ttk.Button(preset_frame, text=name, 
+                           command=lambda r=repo: self._set_preset(r))
+            btn.pack(side=tk.LEFT, padx=5)
+        
+        # Bottoni
+        btn_frame = ttk.Frame(self.dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=20)
+        
+        self.verify_btn = ttk.Button(btn_frame, text="🔍 Verifica Modello", command=self._verify_model, width=18)
+        self.verify_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.add_btn = ttk.Button(btn_frame, text="✅ Aggiungi", command=self._add_model, width=15, state='disabled')
+        self.add_btn.pack(side=tk.RIGHT, padx=5)
+        
+        ttk.Button(btn_frame, text="Annulla", command=self.dialog.destroy, width=15).pack(side=tk.RIGHT, padx=5)
+        
+        # Bind Enter
+        self.repo_entry.bind('<Return>', lambda e: self._verify_model())
+        
+        # Attendi chiusura
+        self.dialog.wait_window()
+    
+    def _update_disk_status(self):
+        """Aggiorna informazioni spazio disco"""
+        if self.model_manager:
+            status = self.model_manager.get_disk_space_status()
+            status_icon = "✅" if status['status'] == 'ok' else "⚠️" if status['status'] == 'warning' else "❌"
+            self.disk_status_var.set(
+                f"{status_icon} Spazio libero: {status['free_gb']:.1f} GB / {status['total_gb']:.1f} GB | "
+                f"Modelli: {status['models_size_gb']:.1f} GB"
+            )
+            
+            if status['status'] == 'critical':
+                self.disk_status_label.config(foreground='red')
+            elif status['status'] == 'warning':
+                self.disk_status_label.config(foreground='orange')
+            else:
+                self.disk_status_label.config(foreground='green')
+    
+    def _set_preset(self, repo):
+        """Imposta un preset e resetta la verifica"""
+        self.repo_var.set(repo)
+        self.verified = False
+        self.add_btn.config(state='disabled')
+        self.verify_status_var.set("")
+    
+    def _on_repo_changed(self, *args):
+        """Callback quando cambia il repo - resetta verifica"""
+        self.verified = False
+        self.add_btn.config(state='disabled')
+        self.verify_status_var.set("")
+    
+    def _verify_model(self):
+        """Verifica che il modello HuggingFace esista"""
+        repo = self.repo_var.get().strip()
+        if not repo:
+            messagebox.showwarning("Attenzione", "Inserisci un repository HuggingFace", parent=self.dialog)
+            return
+        
+        # Verifica formato base
+        if '/' not in repo:
+            messagebox.showwarning("Attenzione", 
+                "Formato non valido. Usa: owner/repo:quantizzazione\nEs: bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M", 
+                parent=self.dialog)
+            return
+        
+        # Mostra stato verifica
+        self.verify_status_var.set("🔄 Verificando repository su HuggingFace...")
+        self.verify_btn.config(state='disabled')
+        self.dialog.update()
+        
+        # Verifica in thread
+        import threading
+        def verify_thread():
+            try:
+                import requests
+                
+                # Parse repo
+                if ':' in repo:
+                    repo_name, quant = repo.rsplit(':', 1)
+                else:
+                    repo_name = repo
+                    quant = None
+                
+                # Verifica che il repo esista su HuggingFace
+                api_url = f"https://huggingface.co/api/models/{repo_name}"
+                response = requests.get(api_url, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    model_id = data.get('id', repo_name)
+                    
+                    # Controlla se ci sono file GGUF
+                    siblings = data.get('siblings', [])
+                    gguf_files = [f for f in siblings if f.get('rfilename', '').endswith('.gguf')]
+                    
+                    if gguf_files:
+                        # Trova file con la quantizzazione specificata
+                        if quant:
+                            matching = [f for f in gguf_files if quant.upper() in f.get('rfilename', '').upper()]
+                            if matching:
+                                file_info = matching[0]
+                                size_bytes = file_info.get('size', 0)
+                                size_gb = size_bytes / (1024**3) if size_bytes else 0
+                                
+                                self.dialog.after(0, lambda: self._verify_success(
+                                    f"✅ Modello trovato: {model_id}\n"
+                                    f"   File: {file_info.get('rfilename', 'N/A')}\n"
+                                    f"   Dimensione: {size_gb:.2f} GB"
+                                ))
+                            else:
+                                self.dialog.after(0, lambda: self._verify_warning(
+                                    f"⚠️ Repository trovato ma quantizzazione '{quant}' non trovata.\n"
+                                    f"   File GGUF disponibili: {len(gguf_files)}"
+                                ))
+                        else:
+                            self.dialog.after(0, lambda: self._verify_success(
+                                f"✅ Modello trovato: {model_id}\n"
+                                f"   File GGUF disponibili: {len(gguf_files)}"
+                            ))
+                    else:
+                        self.dialog.after(0, lambda: self._verify_error(
+                            f"❌ Repository trovato ma non contiene file GGUF"
+                        ))
+                elif response.status_code == 404:
+                    self.dialog.after(0, lambda: self._verify_error(
+                        f"❌ Repository non trovato: {repo_name}"
+                    ))
+                else:
+                    self.dialog.after(0, lambda: self._verify_error(
+                        f"❌ Errore HuggingFace: HTTP {response.status_code}"
+                    ))
+                    
+            except requests.exceptions.Timeout:
+                self.dialog.after(0, lambda: self._verify_error(
+                    "❌ Timeout: HuggingFace non risponde"
+                ))
+            except Exception as e:
+                self.dialog.after(0, lambda: self._verify_error(
+                    f"❌ Errore: {str(e)}"
+                ))
+        
+        threading.Thread(target=verify_thread, daemon=True).start()
+    
+    def _verify_success(self, message):
+        """Verifica riuscita"""
+        self.verify_status_var.set(message)
+        self.verify_status_label.config(foreground='green')
+        self.verify_btn.config(state='normal')
+        self.add_btn.config(state='normal')
+        self.verified = True
+    
+    def _verify_warning(self, message):
+        """Verifica con warning"""
+        self.verify_status_var.set(message)
+        self.verify_status_label.config(foreground='orange')
+        self.verify_btn.config(state='normal')
+        self.add_btn.config(state='normal')  # Permetti comunque di aggiungere
+        self.verified = True
+    
+    def _verify_error(self, message):
+        """Verifica fallita"""
+        self.verify_status_var.set(message)
+        self.verify_status_label.config(foreground='red')
+        self.verify_btn.config(state='normal')
+        self.add_btn.config(state='disabled')
+        self.verified = False
+    
+    def _add_model(self):
+        """Aggiungi il modello"""
+        if not self.verified:
+            messagebox.showwarning("Attenzione", 
+                "Prima verifica che il modello esista cliccando '🔍 Verifica Modello'", 
+                parent=self.dialog)
+            return
+        
+        repo = self.repo_var.get().strip()
+        
+        # Controlla spazio disco
+        if self.model_manager:
+            disk_status = self.model_manager.get_disk_space_status()
+            if disk_status['status'] == 'critical':
+                if not messagebox.askyesno("Spazio Disco Critico",
+                    f"Spazio disco quasi esaurito ({disk_status['free_gb']:.1f} GB liberi).\n\n"
+                    "Vuoi continuare comunque?",
+                    parent=self.dialog):
+                    return
+        
+        try:
+            context = int(self.context_var.get())
+        except ValueError:
+            context = 4096
+        
+        if self.model_manager:
+            self.result = self.model_manager.add_huggingface_model(repo, context)
+            if self.result:
+                messagebox.showinfo("Successo", 
+                    f"Modello aggiunto: {self.result.name}\n\n"
+                    "Il modello sarà scaricato automaticamente quando avvii una sessione.\n"
+                    "NOTA: Il download potrebbe richiedere diversi minuti.",
+                    parent=self.dialog)
+                self.dialog.destroy()
+            else:
+                messagebox.showerror("Errore", "Impossibile aggiungere il modello", parent=self.dialog)
+        else:
+            messagebox.showerror("Errore", "Model Manager non inizializzato", parent=self.dialog)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,23 @@
+{
+  "models": {
+    "79801dfd6f27dcae": {
+      "id": "79801dfd6f27dcae",
+      "name": "30B",
+      "filename": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
+      "filepath": "",
+      "size_bytes": 16106127360,
+      "size_gb": 15.0,
+      "parameters": "30B",
+      "quantization": "Unknown",
+      "context_length": 4096,
+      "architecture": "unknown",
+      "created_at": "2026-02-02T16:33:55.459879",
+      "min_vram_mb": 18000,
+      "recommended_vram_mb": 27000,
+      "enabled": true,
+      "hf_repo": "unsloth/Nemotron-3-Nano-30B-A3B-GGUF",
+      "is_huggingface": true
+    }
+  },
+  "updated_at": "2026-02-02T16:33:55.459900"
+}

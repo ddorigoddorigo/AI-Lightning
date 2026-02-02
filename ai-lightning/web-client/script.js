@@ -14,6 +14,7 @@ let selectedModel = null;
 let availableModels = [];
 let onlineNodes = [];
 let isWaitingForResponse = false;
+let modelsRefreshInterval = null;
 
 // ===========================================
 // Initialization
@@ -26,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
         connectSocket();
         showMain();
         loadModels();
+        startModelsRefresh();
     } else {
         showAuth();
     }
@@ -380,6 +382,32 @@ function refreshModels() {
     loadNetworkInfo();
 }
 
+// ===========================================
+// Auto-refresh Models (ogni 5 secondi)
+// ===========================================
+function startModelsRefresh() {
+    // Evita duplicati
+    if (modelsRefreshInterval) {
+        clearInterval(modelsRefreshInterval);
+    }
+    
+    // Refresh ogni 5 secondi solo quando sulla pagina modelli
+    modelsRefreshInterval = setInterval(() => {
+        const modelsSection = document.getElementById('models-section');
+        // Refresh solo se la sezione modelli è visibile
+        if (modelsSection && modelsSection.style.display !== 'none') {
+            loadModels();
+        }
+    }, 5000);
+}
+
+function stopModelsRefresh() {
+    if (modelsRefreshInterval) {
+        clearInterval(modelsRefreshInterval);
+        modelsRefreshInterval = null;
+    }
+}
+
 function selectModel(model) {
     selectedModel = model;
     
@@ -466,11 +494,48 @@ async function createSession() {
         document.getElementById('invoice').textContent = data.invoice;
         document.getElementById('invoice-amount').textContent = data.amount;
         
+        // Genera QR code
+        generateQRCode(data.invoice);
+        
         currentSession = data.session_id;
         localStorage.setItem('sessionId', currentSession);
         
     } catch (error) {
         showError(error.message);
+    }
+}
+
+// Genera QR code per l'invoice Lightning
+function generateQRCode(invoice) {
+    const canvas = document.getElementById('qr-code');
+    
+    // Usa il prefisso lightning: per compatibilità con i wallet
+    const lightningUri = `lightning:${invoice.toUpperCase()}`;
+    
+    // Opzioni QR code
+    QRCode.toCanvas(canvas, lightningUri, {
+        width: 280,
+        margin: 2,
+        color: {
+            dark: '#1a1a2e',  // Colore scuro (sfondo del tema)
+            light: '#ffffff'  // Sfondo bianco per leggibilità
+        },
+        errorCorrectionLevel: 'M'
+    }, function(error) {
+        if (error) {
+            console.error('QR Code generation error:', error);
+            // Fallback: nascondi QR se fallisce
+            document.getElementById('qr-container').style.display = 'none';
+        }
+    });
+}
+
+// Apri invoice nel wallet Lightning
+function openInWallet() {
+    const invoice = document.getElementById('invoice').textContent;
+    if (invoice) {
+        // Usa lightning: URI scheme per aprire nel wallet
+        window.location.href = `lightning:${invoice}`;
     }
 }
 
@@ -499,12 +564,12 @@ function checkPayment() {
     console.log('Checking payment for session:', currentSession);
     
     // Mostra messaggio di attesa con timer
-    showLoadingOverlay('Starting AI model... This may take 1-3 minutes for large models.');
+    showLoadingOverlay('Connecting to node... Waiting for model to load.');
     
     socket.emit('start_session', {session_id: currentSession});
 }
 
-// Mostra overlay di caricamento con opzione skip
+// Mostra overlay di caricamento con opzione skip e stato aggiornabile
 function showLoadingOverlay(message) {
     // Rimuovi overlay precedente se esiste
     hideLoadingOverlay();
@@ -514,7 +579,8 @@ function showLoadingOverlay(message) {
     overlay.innerHTML = `
         <div class="loading-content">
             <div class="loading-spinner"></div>
-            <p class="loading-message">${message}</p>
+            <p class="loading-message" id="loading-message">${message}</p>
+            <p class="loading-status" id="loading-status"></p>
             <p class="loading-timer">Elapsed: <span id="loading-time">0</span>s</p>
             <button class="btn btn-secondary" onclick="skipLoading()">Cancel & Go Back</button>
         </div>
@@ -528,6 +594,28 @@ function showLoadingOverlay(message) {
         const timeEl = document.getElementById('loading-time');
         if (timeEl) timeEl.textContent = seconds;
     }, 1000);
+}
+
+// Aggiorna messaggio e status dell'overlay di caricamento
+function updateLoadingOverlay(message, status) {
+    const msgEl = document.getElementById('loading-message');
+    const statusEl = document.getElementById('loading-status');
+    
+    if (msgEl && message) {
+        msgEl.textContent = message;
+    }
+    if (statusEl) {
+        statusEl.textContent = status || '';
+        
+        // Colore in base allo stato
+        if (status && status.toLowerCase().includes('download')) {
+            statusEl.style.color = '#f7931a';  // Arancione per download
+        } else if (status && status.toLowerCase().includes('loading')) {
+            statusEl.style.color = '#00d4ff';  // Azzurro per caricamento
+        } else if (status && status.toLowerCase().includes('ready')) {
+            statusEl.style.color = '#00ff88';  // Verde per pronto
+        }
+    }
 }
 
 function hideLoadingOverlay() {
@@ -567,10 +655,19 @@ function startChatUI() {
 }
 
 function endSession() {
-    if (confirm('Are you sure you want to end this session?')) {
+    if (confirm('Are you sure you want to end this session? This will stop the AI model on the node.')) {
+        // Invia end_session al server per fermare llama-server sul nodo
+        if (socket && currentSession) {
+            socket.emit('end_session', { session_id: currentSession });
+        }
+        
         currentSession = null;
         selectedModel = null;
         localStorage.removeItem('sessionId');
+        
+        // Reset streaming state
+        currentStreamingMessageId = null;
+        streamingContent = '';
         
         document.getElementById('chat-section').style.display = 'none';
         document.getElementById('models-section').style.display = 'block';
@@ -582,6 +679,11 @@ function endSession() {
 // ===========================================
 // Socket.IO
 // ===========================================
+
+// Variabile per tracciare il messaggio in streaming corrente
+let currentStreamingMessageId = null;
+let streamingContent = '';
+
 function connectSocket() {
     if (socket && socket.connected) return;
     
@@ -603,7 +705,42 @@ function connectSocket() {
             expiresEl.textContent = `Expires: ${new Date(data.expires_at).toLocaleTimeString()}`;
         }
         startChatUI();
-        addMessage('System', `Connected to node ${data.node_id}`);
+        addMessage('System', `Connected to node ${data.node_id}. Model ready!`);
+    });
+    
+    // Aggiornamenti stato caricamento modello
+    socket.on('model_status', (data) => {
+        const status = data.status;
+        const message = data.message;
+        
+        console.log('Model status:', status, message);
+        
+        let displayMessage = 'Loading model...';
+        let displayStatus = message;
+        
+        switch(status) {
+            case 'downloading':
+                displayMessage = '⬇️ Downloading model from HuggingFace...';
+                displayStatus = message || 'This may take several minutes for large models.';
+                break;
+            case 'loading':
+                displayMessage = '🔄 Loading model into GPU memory...';
+                displayStatus = message || 'Almost ready...';
+                break;
+            case 'ready':
+                displayMessage = '✅ Model loaded!';
+                displayStatus = 'Starting session...';
+                break;
+            case 'waiting':
+                displayMessage = '⏳ Preparing model...';
+                displayStatus = message;
+                break;
+            default:
+                displayStatus = message || status;
+        }
+        
+        updateLoadingOverlay(displayMessage, displayStatus);
+    });
     });
     
     socket.on('session_ready', (data) => {
@@ -611,13 +748,56 @@ function connectSocket() {
         addMessage('System', 'Session ready!');
     });
 
+    // Streaming: ricevi token singoli
+    socket.on('ai_token', (data) => {
+        const token = data.token;
+        const isFinal = data.is_final;
+        
+        // Rimuovi loading indicator alla prima token
+        if (!currentStreamingMessageId) {
+            removeLoadingIndicator();
+            currentStreamingMessageId = createStreamingMessage();
+            streamingContent = '';
+        }
+        
+        // Aggiungi token al contenuto
+        streamingContent += token;
+        updateStreamingMessage(currentStreamingMessageId, streamingContent);
+        
+        if (isFinal) {
+            // Streaming completato per questo chunk
+            // (la risposta finale arriverà con ai_response)
+        }
+    });
+
     socket.on('ai_response', (data) => {
-        addMessage('AI', data.response);
+        removeLoadingIndicator();
+        
+        if (data.streaming_complete && currentStreamingMessageId) {
+            // Streaming completato - aggiorna con contenuto pulito finale
+            finalizeStreamingMessage(currentStreamingMessageId, data.response);
+            currentStreamingMessageId = null;
+            streamingContent = '';
+        } else if (!currentStreamingMessageId) {
+            // Risposta non-streaming normale
+            addMessage('AI', data.response);
+        }
+        
+        enableInput();
     });
 
     socket.on('error', (data) => {
         console.error('Socket error:', data);
         hideLoadingOverlay();
+        removeLoadingIndicator();
+        
+        // Reset streaming state
+        if (currentStreamingMessageId) {
+            finalizeStreamingMessage(currentStreamingMessageId, '[Error occurred]');
+            currentStreamingMessageId = null;
+            streamingContent = '';
+        }
+        
         showError(data.message);
         // Also add to chat if visible
         const chatSection = document.getElementById('chat-section');
@@ -625,6 +805,12 @@ function connectSocket() {
             addMessage('System', `Error: ${data.message}`);
             enableInput();
         }
+    });
+
+    socket.on('session_ended', (data) => {
+        console.log('Session ended by server');
+        // La sessione è stata chiusa (potrebbe essere stata chiusa dal server)
+        addMessage('System', 'Session ended. The AI model has been stopped.');
     });
 
     socket.on('disconnect', () => {
@@ -653,7 +839,7 @@ function sendMessage() {
     socket.emit('chat_message', {
         session_id: currentSession,
         prompt: prompt,
-        max_tokens: 512,
+        max_tokens: 2048,
         temperature: 0.7
     });
     
@@ -694,6 +880,58 @@ function removeLoadingIndicator() {
     if (loading) loading.remove();
 }
 
+// Crea un messaggio per lo streaming e ritorna il suo ID
+function createStreamingMessage() {
+    const chat = document.getElementById('chat');
+    if (!chat) return null;
+    
+    const messageId = 'streaming-' + Date.now();
+    const messageDiv = document.createElement('div');
+    messageDiv.id = messageId;
+    messageDiv.className = 'message ai streaming';
+    messageDiv.innerHTML = `<strong>AI:</strong> <span class="content"></span><span class="cursor">▌</span>`;
+    
+    chat.appendChild(messageDiv);
+    scrollChat();
+    
+    return messageId;
+}
+
+// Aggiorna il contenuto del messaggio in streaming
+function updateStreamingMessage(messageId, content) {
+    const messageDiv = document.getElementById(messageId);
+    if (!messageDiv) return;
+    
+    const contentSpan = messageDiv.querySelector('.content');
+    if (contentSpan) {
+        // Formatta il contenuto mentre arriva
+        contentSpan.innerHTML = formatMessage(content);
+    }
+    scrollChat();
+}
+
+// Finalizza il messaggio streaming con il contenuto pulito finale
+function finalizeStreamingMessage(messageId, finalContent) {
+    const messageDiv = document.getElementById(messageId);
+    if (!messageDiv) return;
+    
+    // Rimuovi classe streaming e cursore
+    messageDiv.classList.remove('streaming');
+    const cursor = messageDiv.querySelector('.cursor');
+    if (cursor) cursor.remove();
+    
+    // Aggiorna con contenuto finale formattato
+    const contentSpan = messageDiv.querySelector('.content');
+    if (contentSpan) {
+        contentSpan.innerHTML = formatMessage(finalContent);
+    }
+    
+    // Aggiorna l'intera struttura per consistenza
+    messageDiv.innerHTML = `<strong>AI:</strong> ${formatMessage(finalContent)}`;
+    
+    scrollChat();
+}
+
 function addMessage(sender, text) {
     removeLoadingIndicator();
     
@@ -727,25 +965,84 @@ function scrollChat() {
 }
 
 function formatMessage(text) {
-    // Escape HTML
-    text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (!text) return '';
     
-    // Code blocks
-    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>');
+    // Escape HTML (ma preserva i delimitatori LaTeX)
+    let escaped = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
     
-    // Inline code
-    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Proteggi i blocchi LaTeX prima del processing markdown
+    const latexBlocks = [];
+    let blockIndex = 0;
     
-    // Bold
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Proteggi display math $$...$$
+    escaped = escaped.replace(/\$\$([\s\S]*?)\$\$/g, (match, content) => {
+        latexBlocks.push({ type: 'display', content: content });
+        return `%%LATEX_BLOCK_${blockIndex++}%%`;
+    });
     
-    // Italic
-    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    // Proteggi inline math $...$  (non greedy, no newlines)
+    escaped = escaped.replace(/\$([^\$\n]+?)\$/g, (match, content) => {
+        latexBlocks.push({ type: 'inline', content: content });
+        return `%%LATEX_BLOCK_${blockIndex++}%%`;
+    });
+    
+    // Proteggi \[...\] display math
+    escaped = escaped.replace(/\\\[([\s\S]*?)\\\]/g, (match, content) => {
+        latexBlocks.push({ type: 'display', content: content });
+        return `%%LATEX_BLOCK_${blockIndex++}%%`;
+    });
+    
+    // Proteggi \(...\) inline math
+    escaped = escaped.replace(/\\\(([\s\S]*?)\\\)/g, (match, content) => {
+        latexBlocks.push({ type: 'inline', content: content });
+        return `%%LATEX_BLOCK_${blockIndex++}%%`;
+    });
+    
+    // Code blocks ```
+    escaped = escaped.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code class="$1">$2</code></pre>');
+    
+    // Inline code `
+    escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Bold **text**
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Italic *text*
+    escaped = escaped.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     
     // Newlines
-    text = text.replace(/\n/g, '<br>');
+    escaped = escaped.replace(/\n/g, '<br>');
     
-    return text;
+    // Ripristina i blocchi LaTeX con rendering KaTeX
+    for (let i = 0; i < latexBlocks.length; i++) {
+        const block = latexBlocks[i];
+        const placeholder = `%%LATEX_BLOCK_${i}%%`;
+        
+        try {
+            if (typeof katex !== 'undefined') {
+                const rendered = katex.renderToString(block.content, {
+                    displayMode: block.type === 'display',
+                    throwOnError: false,
+                    trust: true
+                });
+                escaped = escaped.replace(placeholder, rendered);
+            } else {
+                // Fallback se KaTeX non è caricato
+                const wrapper = block.type === 'display' 
+                    ? `<div class="math-display">\\[${block.content}\\]</div>`
+                    : `<span class="math-inline">\\(${block.content}\\)</span>`;
+                escaped = escaped.replace(placeholder, wrapper);
+            }
+        } catch (e) {
+            // In caso di errore, mostra il LaTeX raw
+            escaped = escaped.replace(placeholder, `<code class="latex-error">${block.content}</code>`);
+        }
+    }
+    
+    return escaped;
 }
 
 // ===========================================

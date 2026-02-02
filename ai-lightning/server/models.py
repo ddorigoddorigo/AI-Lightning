@@ -62,14 +62,71 @@ class Node(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     address = db.Column(db.String(45), nullable=False)
     models = db.Column(db.JSON, nullable=False)  # Dict di modelli offerti
+    payment_address = db.Column(db.String(256), nullable=True)  # Lightning address (LNURL, BOLT12, or node pubkey)
     online = db.Column(db.Boolean, default=True)
     last_ping = db.Column(db.DateTime, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    total_earned = db.Column(db.Integer, default=0)  # Total satoshis earned
 
     owner = db.relationship('User', backref='owned_nodes')
 
     def __repr__(self):
         return f'<Node {self.id} at {self.address}>'
+
+
+class NodeStats(db.Model):
+    """Statistiche del nodo host."""
+    __tablename__ = 'node_stats'
+
+    id = db.Column(db.Integer, primary_key=True)
+    node_id = db.Column(db.String(64), db.ForeignKey('nodes.id'), nullable=False, unique=True)
+    
+    # Contatori sessioni
+    total_sessions = db.Column(db.Integer, default=0)
+    completed_sessions = db.Column(db.Integer, default=0)
+    failed_sessions = db.Column(db.Integer, default=0)
+    
+    # Contatori utilizzo
+    total_requests = db.Column(db.Integer, default=0)  # Numero richieste inferenza
+    total_tokens_generated = db.Column(db.Integer, default=0)
+    total_minutes_active = db.Column(db.Float, default=0.0)  # Minuti totali di attività
+    
+    # Guadagni
+    total_earned_sats = db.Column(db.Integer, default=0)
+    
+    # Performance
+    avg_tokens_per_second = db.Column(db.Float, default=0.0)
+    avg_response_time_ms = db.Column(db.Float, default=0.0)
+    
+    # Uptime
+    first_online = db.Column(db.DateTime, default=datetime.utcnow)
+    last_online = db.Column(db.DateTime, default=datetime.utcnow)
+    total_uptime_hours = db.Column(db.Float, default=0.0)
+    
+    # Timestamps
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    node = db.relationship('Node', backref=db.backref('stats', uselist=False))
+
+    def to_dict(self):
+        """Converti in dizionario per API."""
+        return {
+            'node_id': self.node_id,
+            'total_sessions': self.total_sessions,
+            'completed_sessions': self.completed_sessions,
+            'failed_sessions': self.failed_sessions,
+            'total_requests': self.total_requests,
+            'total_tokens_generated': self.total_tokens_generated,
+            'total_minutes_active': round(self.total_minutes_active, 2),
+            'total_earned_sats': self.total_earned_sats,
+            'avg_tokens_per_second': round(self.avg_tokens_per_second, 2),
+            'avg_response_time_ms': round(self.avg_response_time_ms, 2),
+            'first_online': self.first_online.isoformat() if self.first_online else None,
+            'last_online': self.last_online.isoformat() if self.last_online else None,
+            'total_uptime_hours': round(self.total_uptime_hours, 2),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
 
 class Transaction(db.Model):
     """Transazione finanziaria."""

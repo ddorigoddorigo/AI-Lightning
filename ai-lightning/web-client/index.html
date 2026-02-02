@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Lightning ⚡</title>
     <link rel="stylesheet" href="style.css">
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <!-- QR Code Generator -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -81,13 +87,28 @@
             <div id="invoice-section" style="display: none;">
                 <h3>💳 Payment Required</h3>
                 <p>Pay this Lightning invoice to start your session:</p>
+                
+                <!-- QR Code -->
+                <div id="qr-container">
+                    <canvas id="qr-code"></canvas>
+                </div>
+                
+                <!-- Invoice String -->
                 <div id="invoice-container">
                     <pre id="invoice"></pre>
-                    <button onclick="copyInvoice()" class="btn-small">📋 Copy</button>
+                    <div class="invoice-buttons">
+                        <button onclick="copyInvoice()" class="btn-small">📋 Copy Invoice</button>
+                        <button onclick="openInWallet()" class="btn-small btn-lightning">⚡ Open in Wallet</button>
+                    </div>
                 </div>
+                
                 <p class="invoice-amount">Amount: <span id="invoice-amount">-</span> sats</p>
-                <button onclick="checkPayment()" class="btn-primary">✓ I've Paid</button>
-                <button onclick="cancelPayment()" class="btn-secondary">Cancel</button>
+                <p class="invoice-hint">Scan QR code with your Lightning wallet or click "Open in Wallet"</p>
+                
+                <div class="payment-buttons">
+                    <button onclick="checkPayment()" class="btn-primary">✓ I've Paid</button>
+                    <button onclick="cancelPayment()" class="btn-secondary">Cancel</button>
+                </div>
             </div>
 
             <!-- Chat Section -->

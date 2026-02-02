@@ -546,10 +546,16 @@ def start_session(data):
             session.active = True
             db.session.commit()
             
-            # Ottieni context dalla config o usa default
-            context = 4096
-            if session.model in Config.AVAILABLE_MODELS:
-                context = Config.AVAILABLE_MODELS[session.model].get('context', 4096)
+            # Ottieni context dal modello registrato dal nodo
+            context = 4096  # Default
+            if ws_node_id in connected_nodes:
+                node_models = connected_nodes[ws_node_id].get('models', [])
+                for m in node_models:
+                    if isinstance(m, dict):
+                        model_id = m.get('id', m.get('name', ''))
+                        if model_id == session.model or m.get('name') == session.model:
+                            context = m.get('context_length', m.get('context', 4096))
+                            break
             
             # Invia richiesta al nodo
             socketio.emit('start_session', {
@@ -634,13 +640,14 @@ def handle_message(data):
 
     # Verifica se il nodo è connesso via WebSocket
     if session.node_id in connected_nodes:
-        # Inoltra al nodo WebSocket
+        # Inoltra al nodo WebSocket con streaming abilitato
         socketio.emit('inference_request', {
             'session_id': session.id,
             'prompt': data['prompt'],
-            'max_tokens': data.get('max_tokens', 256),
+            'max_tokens': data.get('max_tokens', 2048),
             'temperature': data.get('temperature', 0.7),
-            'stop': data.get('stop', [])
+            'stop': data.get('stop', []),
+            'stream': True  # Abilita streaming
         }, room=f"node_{session.node_id}")
         return
 
@@ -665,7 +672,7 @@ def handle_message(data):
             f"http://{node_address}:9000/api/completion/{session.id}",
             json={
                 'prompt': data['prompt'],
-                'max_tokens': data.get('max_tokens', 256),
+                'max_tokens': data.get('max_tokens', 2048),
                 'temperature': data.get('temperature', 0.7),
                 'stop': data.get('stop', [])
             },
@@ -710,16 +717,58 @@ def end_session(data):
         emit('error', {'message': 'Authentication required'})
         return
     
-    session = Session.query.get(data['session_id'])
+    session_id = data.get('session_id')
+    session = Session.query.get(session_id)
+    
     if session and session.user_id == user_id:
+        logger.info(f"Ending session {session.id}, node_id={session.node_id}")
+        
         # Ferma la sessione sul nodo
         if session.node_id and session.node_id != 'pending':
-            get_node_manager().stop_remote_session(session.node_id, session.id)
+            node_id = session.node_id
+            
+            # Debug: mostra i nodi connessi
+            logger.info(f"Connected nodes: {list(connected_nodes.keys())}")
+            
+            # Controlla se è un nodo WebSocket
+            if node_id in connected_nodes:
+                node_info = connected_nodes[node_id]
+                node_sid = node_info.get('sid')
+                
+                # Invia stop_session direttamente al socket del nodo
+                logger.info(f"Sending stop_session to node {node_id} (sid: {node_sid})")
+                
+                # Usa to= invece di room= per inviare direttamente al sid del nodo
+                socketio.emit('stop_session', {
+                    'session_id': str(session.id)
+                }, to=node_sid)
+                
+                logger.info(f"Sent stop_session to WebSocket node {node_id} for session {session.id}")
+            else:
+                # Usa HTTP per nodi tradizionali
+                logger.info(f"Node {node_id} not in connected_nodes, trying HTTP")
+                get_node_manager().stop_remote_session(node_id, session.id)
         
         session.active = False
         db.session.commit()
-        leave_room(session.id)
-        emit('session_ended', room=data['session_id'])
+        
+        # Aggiorna statistiche nodo (sessione completata)
+        if session.node_id and session.node_id != 'pending' and session.node_id in connected_nodes:
+            # Calcola minuti attivi (se abbiamo start time)
+            minutes_active = 0
+            if session.created_at:
+                delta = datetime.utcnow() - session.created_at
+                minutes_active = delta.total_seconds() / 60
+            
+            update_node_stats_internal(
+                session.node_id, 
+                add_completed=True,
+                add_minutes=minutes_active
+            )
+        
+        leave_room(str(session.id))
+        emit('session_ended', room=str(session.id))
+        logger.info(f"Session {session.id} ended by user {user_id}")
 
 # Admin routes
 @app.route('/admin/nodes')
@@ -761,6 +810,118 @@ def node_heartbeat():
         nm.redis.hset(f"node:{node_id}", 'load', data['load'])
     
     return jsonify({'status': 'ok'})
+
+
+# ============================================
+# Node Statistics API
+# ============================================
+
+@app.route('/api/node/stats/<node_id>', methods=['GET'])
+def get_node_stats(node_id):
+    """Ottieni statistiche di un nodo."""
+    from models import NodeStats
+    
+    stats = NodeStats.query.filter_by(node_id=node_id).first()
+    if not stats:
+        # Crea statistiche vuote se non esistono
+        return jsonify({
+            'node_id': node_id,
+            'total_sessions': 0,
+            'completed_sessions': 0,
+            'failed_sessions': 0,
+            'total_requests': 0,
+            'total_tokens_generated': 0,
+            'total_minutes_active': 0,
+            'total_earned_sats': 0,
+            'avg_tokens_per_second': 0,
+            'avg_response_time_ms': 0,
+            'first_online': None,
+            'last_online': None,
+            'total_uptime_hours': 0
+        })
+    
+    return jsonify(stats.to_dict())
+
+
+@app.route('/api/node/stats/<node_id>/update', methods=['POST'])
+def update_node_stats(node_id):
+    """Aggiorna statistiche di un nodo (chiamato internamente)."""
+    from models import NodeStats
+    
+    data = request.get_json()
+    
+    stats = NodeStats.query.filter_by(node_id=node_id).first()
+    if not stats:
+        stats = NodeStats(node_id=node_id)
+        db.session.add(stats)
+    
+    # Aggiorna campi se presenti
+    if 'add_session' in data:
+        stats.total_sessions += 1
+    if 'add_completed' in data:
+        stats.completed_sessions += 1
+    if 'add_failed' in data:
+        stats.failed_sessions += 1
+    if 'add_request' in data:
+        stats.total_requests += 1
+    if 'add_tokens' in data:
+        stats.total_tokens_generated += data['add_tokens']
+    if 'add_minutes' in data:
+        stats.total_minutes_active += data['add_minutes']
+    if 'add_earned' in data:
+        stats.total_earned_sats += data['add_earned']
+    if 'update_performance' in data:
+        perf = data['update_performance']
+        # Media mobile per performance
+        if perf.get('tokens_per_second'):
+            if stats.avg_tokens_per_second == 0:
+                stats.avg_tokens_per_second = perf['tokens_per_second']
+            else:
+                stats.avg_tokens_per_second = (stats.avg_tokens_per_second + perf['tokens_per_second']) / 2
+        if perf.get('response_time_ms'):
+            if stats.avg_response_time_ms == 0:
+                stats.avg_response_time_ms = perf['response_time_ms']
+            else:
+                stats.avg_response_time_ms = (stats.avg_response_time_ms + perf['response_time_ms']) / 2
+    
+    stats.last_online = datetime.utcnow()
+    
+    db.session.commit()
+    return jsonify({'status': 'ok', 'stats': stats.to_dict()})
+
+
+def update_node_stats_internal(node_id, **kwargs):
+    """Helper per aggiornare statistiche internamente."""
+    from models import NodeStats
+    
+    try:
+        stats = NodeStats.query.filter_by(node_id=node_id).first()
+        if not stats:
+            stats = NodeStats(node_id=node_id)
+            db.session.add(stats)
+        
+        if kwargs.get('add_session'):
+            stats.total_sessions += 1
+        if kwargs.get('add_completed'):
+            stats.completed_sessions += 1
+        if kwargs.get('add_failed'):
+            stats.failed_sessions += 1
+        if kwargs.get('add_request'):
+            stats.total_requests += 1
+        if kwargs.get('add_tokens'):
+            stats.total_tokens_generated += kwargs['add_tokens']
+        if kwargs.get('add_minutes'):
+            stats.total_minutes_active += kwargs['add_minutes']
+        if kwargs.get('add_earned'):
+            stats.total_earned_sats += kwargs['add_earned']
+        
+        stats.last_online = datetime.utcnow()
+        db.session.commit()
+        
+        return stats
+    except Exception as e:
+        logger.error(f"Error updating node stats: {e}")
+        return None
 
 
 # ============================================
@@ -841,6 +1002,15 @@ def handle_node_register(data):
     total_vram = hardware.get('total_vram_mb', 0) if hardware else 0
     gpu_count = len(hardware.get('gpus', [])) if hardware else 0
     
+    # Aggiorna statistiche nodo (first_online, last_online)
+    from models import NodeStats
+    stats = NodeStats.query.filter_by(node_id=node_id).first()
+    if not stats:
+        stats = NodeStats(node_id=node_id, first_online=datetime.utcnow())
+        db.session.add(stats)
+    stats.last_online = datetime.utcnow()
+    db.session.commit()
+    
     logger.info(f"Node {node_id} ({node_name}) registered via WebSocket - {len(models)} models, {gpu_count} GPUs, {total_vram}MB VRAM")
     
     emit('node_registered', {
@@ -872,8 +1042,13 @@ def handle_disconnect():
 def handle_node_session_started(data):
     """Nodo conferma che la sessione è partita."""
     session_id = str(data['session_id'])
+    node_id = data.get('node_id')
     
     logger.info(f"Node confirms session {session_id} started")
+    
+    # Aggiorna statistiche nodo
+    if node_id:
+        update_node_stats_internal(node_id, add_session=True)
     
     # Notifica il client utente
     emit('session_ready', {'session_id': session_id}, room=session_id)
@@ -884,17 +1059,132 @@ def handle_node_session_error(data):
     """Nodo riporta errore nell'avvio sessione."""
     session_id = str(data['session_id'])
     error = data.get('error', 'Unknown error')
+    node_id = data.get('node_id')
     
     logger.error(f"Node error for session {session_id}: {error}")
+    
+    # Aggiorna statistiche nodo (sessione fallita)
+    if node_id:
+        update_node_stats_internal(node_id, add_failed=True)
     
     emit('error', {'message': f'Node error: {error}'}, room=session_id)
 
 
-@socketio.on('inference_response')
-def handle_inference_response(data):
-    """Nodo invia risposta inferenza."""
+@socketio.on('inference_token')
+def handle_inference_token(data):
+    """Nodo invia singolo token (streaming)."""
+    session_id = str(data['session_id'])
+    token = data.get('token', '')
+    is_final = data.get('is_final', False)
+    
+    # Inoltra token al client
+    emit('ai_token', {
+        'token': token,
+        'is_final': is_final,
+        'session_id': session_id
+    }, room=session_id)
+
+
+@socketio.on('session_status')
+def handle_session_status(data):
+    """Nodo invia aggiornamento stato sessione (download/loading model)."""
+    session_id = str(data['session_id'])
+    status = data.get('status', 'unknown')
+    message = data.get('message', '')
+    
+    logger.info(f"Session {session_id} status: {status} - {message}")
+    
+    # Inoltra al client
+    emit('model_status', {
+        'session_id': session_id,
+        'status': status,
+        'message': message
+    }, room=session_id)
+
+
+@socketio.on('inference_complete')
+def handle_inference_complete(data):
+    """Nodo segnala completamento streaming con risposta pulita."""
     session_id = str(data['session_id'])
     content = data.get('content', '')
+    tokens_generated = data.get('tokens_generated', 0)
+    response_time_ms = data.get('response_time_ms', 0)
+    
+    # Aggiorna statistiche nodo
+    session = Session.query.get(session_id)
+    if session and session.node_id:
+        tokens_per_second = 0
+        if response_time_ms > 0 and tokens_generated > 0:
+            tokens_per_second = tokens_generated / (response_time_ms / 1000)
+        
+        update_node_stats_internal(
+            session.node_id,
+            add_request=True,
+            add_tokens=tokens_generated
+        )
+        
+        # Aggiorna performance se disponibile
+        if tokens_per_second > 0 or response_time_ms > 0:
+            from models import NodeStats
+            stats = NodeStats.query.filter_by(node_id=session.node_id).first()
+            if stats:
+                if tokens_per_second > 0:
+                    if stats.avg_tokens_per_second == 0:
+                        stats.avg_tokens_per_second = tokens_per_second
+                    else:
+                        stats.avg_tokens_per_second = (stats.avg_tokens_per_second + tokens_per_second) / 2
+                if response_time_ms > 0:
+                    if stats.avg_response_time_ms == 0:
+                        stats.avg_response_time_ms = response_time_ms
+                    else:
+                        stats.avg_response_time_ms = (stats.avg_response_time_ms + response_time_ms) / 2
+                db.session.commit()
+    
+    # Invia risposta completa pulita
+    emit('ai_response', {
+        'response': content,
+        'session_id': session_id,
+        'streaming_complete': True
+    }, room=session_id)
+
+
+@socketio.on('inference_response')
+def handle_inference_response(data):
+    """Nodo invia risposta inferenza (non-streaming)."""
+    session_id = str(data['session_id'])
+    content = data.get('content', '')
+    tokens_generated = data.get('tokens_generated', 0)
+    response_time_ms = data.get('response_time_ms', 0)
+    
+    # Aggiorna statistiche nodo
+    session = Session.query.get(session_id)
+    if session and session.node_id:
+        tokens_per_second = 0
+        if response_time_ms > 0 and tokens_generated > 0:
+            tokens_per_second = tokens_generated / (response_time_ms / 1000)
+        
+        update_node_stats_internal(
+            session.node_id,
+            add_request=True,
+            add_tokens=tokens_generated
+        )
+        
+        # Aggiorna performance se disponibile
+        if tokens_per_second > 0 or response_time_ms > 0:
+            from models import NodeStats
+            stats = NodeStats.query.filter_by(node_id=session.node_id).first()
+            if stats:
+                if tokens_per_second > 0:
+                    if stats.avg_tokens_per_second == 0:
+                        stats.avg_tokens_per_second = tokens_per_second
+                    else:
+                        stats.avg_tokens_per_second = (stats.avg_tokens_per_second + tokens_per_second) / 2
+                if response_time_ms > 0:
+                    if stats.avg_response_time_ms == 0:
+                        stats.avg_response_time_ms = response_time_ms
+                    else:
+                        stats.avg_response_time_ms = (stats.avg_response_time_ms + response_time_ms) / 2
+                db.session.commit()
     
     emit('ai_response', {
         'response': content,

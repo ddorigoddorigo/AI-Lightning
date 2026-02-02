@@ -416,6 +416,24 @@ button:disabled {
     text-align: center;
 }
 
+/* QR Code Container */
+#qr-container {
+    display: flex;
+    justify-content: center;
+    margin: 20px 0;
+    padding: 20px;
+    background: white;
+    border-radius: 12px;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+#qr-code {
+    display: block;
+}
+
 #invoice-container {
     position: relative;
     margin: 20px 0;
@@ -428,26 +446,54 @@ button:disabled {
     white-space: pre-wrap;
     word-break: break-all;
     font-family: 'Consolas', monospace;
-    font-size: 0.85em;
-    max-height: 150px;
+    font-size: 0.8em;
+    max-height: 100px;
     overflow-y: auto;
     text-align: left;
+    margin-bottom: 10px;
 }
 
-#invoice-container .btn-small {
-    position: absolute;
-    top: 10px;
-    right: 10px;
+.invoice-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.btn-lightning {
+    background: linear-gradient(135deg, #f7931a, #ffb347) !important;
+    color: #1a1a2e !important;
+    font-weight: 600;
+}
+
+.btn-lightning:hover {
+    background: linear-gradient(135deg, #ffb347, #f7931a) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(247, 147, 26, 0.4);
 }
 
 .invoice-amount {
-    font-size: 1.2em;
+    font-size: 1.3em;
     margin: 15px 0;
 }
 
 .invoice-amount span {
     color: var(--primary);
     font-weight: 600;
+}
+
+.invoice-hint {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin: 10px 0;
+}
+
+.payment-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+}
 }
 
 /* ===========================================
@@ -547,6 +593,27 @@ button:disabled {
     margin-right: 20%;
 }
 
+/* Streaming message cursor */
+.message.streaming .cursor {
+    display: inline-block;
+    color: var(--primary);
+    animation: blink 1s infinite;
+    margin-left: 2px;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.message.streaming {
+    border-left: 3px solid var(--primary);
+}
+
+.message.streaming .content {
+    display: inline;
+}
+
 .typing-indicator {
     display: flex;
     gap: 4px;
@@ -598,6 +665,43 @@ button:disabled {
 .message pre code {
     background: none;
     padding: 0;
+}
+
+/* LaTeX/KaTeX styling */
+.message .katex {
+    font-size: 1.1em;
+}
+
+.message .katex-display {
+    margin: 1em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5em 0;
+}
+
+.message .katex-display > .katex {
+    text-align: center;
+}
+
+.math-display {
+    display: block;
+    text-align: center;
+    margin: 1em 0;
+    padding: 0.5em;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.math-inline {
+    display: inline;
+}
+
+.latex-error {
+    color: var(--error);
+    background: rgba(244, 67, 54, 0.1);
+    padding: 2px 4px;
+    border-radius: 2px;
 }
 
 /* ===========================================
@@ -845,6 +949,15 @@ button:disabled {
     font-size: 1.1em;
     color: var(--text);
     margin-bottom: 10px;
+}
+
+.loading-status {
+    font-size: 0.95em;
+    color: var(--primary);
+    margin-bottom: 10px;
+    min-height: 1.2em;
+    word-break: break-word;
+    max-width: 350px;
 }
 
 .loading-timer {
