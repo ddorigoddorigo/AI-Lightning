@@ -795,6 +795,7 @@ function connectSocket() {
     });
 
     socket.on('ai_response', (data) => {
+        console.log('ai_response received:', data);
         removeLoadingIndicator();
         
         if (data.streaming_complete && currentStreamingMessageId) {
@@ -808,6 +809,7 @@ function connectSocket() {
         }
         
         enableInput();
+        console.log('Input enabled after ai_response');
     });
 
     socket.on('error', (data) => {
@@ -849,7 +851,12 @@ function sendMessage() {
     const promptInput = document.getElementById('prompt');
     const prompt = promptInput.value.trim();
     
-    if (!prompt || !currentSession || isWaitingForResponse) return;
+    console.log('sendMessage called:', {prompt, currentSession, isWaitingForResponse, disabled: promptInput.disabled});
+    
+    if (!prompt || !currentSession || isWaitingForResponse) {
+        console.log('sendMessage blocked:', {noPrompt: !prompt, noSession: !currentSession, waiting: isWaitingForResponse});
+        return;
+    }
 
     addMessage('You', prompt);
     promptInput.value = '';
@@ -857,6 +864,7 @@ function sendMessage() {
     isWaitingForResponse = true;
     promptInput.disabled = true;
     document.getElementById('send-btn').disabled = true;
+    console.log('Input disabled, waiting for response');
     
     addLoadingIndicator();
 
@@ -870,6 +878,7 @@ function sendMessage() {
     // Timeout di sicurezza
     setTimeout(() => {
         if (isWaitingForResponse) {
+            console.log('Response timeout triggered');
             removeLoadingIndicator();
             enableInput();
             addMessage('System', 'Response timeout. Please try again.');
@@ -878,12 +887,20 @@ function sendMessage() {
 }
 
 function enableInput() {
+    console.log('enableInput called, current isWaitingForResponse:', isWaitingForResponse);
     isWaitingForResponse = false;
     const promptInput = document.getElementById('prompt');
     const sendBtn = document.getElementById('send-btn');
-    if (promptInput) promptInput.disabled = false;
-    if (sendBtn) sendBtn.disabled = false;
+    if (promptInput) {
+        promptInput.disabled = false;
+        console.log('promptInput.disabled set to false');
+    }
+    if (sendBtn) {
+        sendBtn.disabled = false;
+        console.log('sendBtn.disabled set to false');
+    }
     if (promptInput) promptInput.focus();
+    console.log('enableInput complete');
 }
 
 function addLoadingIndicator() {

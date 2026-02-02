@@ -698,6 +698,18 @@ class NodeClient:
                             'error': error
                         })
                     else:
+                        # Invia token finale esplicito per segnalare fine streaming
+                        logger.info(f"Sending final token marker for session {session_id}")
+                        try:
+                            self.sio.emit('inference_token', {
+                                'session_id': session_id,
+                                'token': '',
+                                'is_final': True
+                            })
+                            time.sleep(0.05)  # Assicura che arrivi prima di inference_complete
+                        except Exception as e:
+                            logger.error(f"Error emitting final token: {e}")
+                        
                         # Invia anche la risposta completa (pulita) alla fine con metriche
                         self.sio.emit('inference_complete', {
                             'session_id': session_id,
