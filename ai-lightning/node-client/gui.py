@@ -162,13 +162,15 @@ class NodeGUI:
     def _create_connection_tab(self):
         """Tab connessione"""
         
-        # Server settings
-        server_frame = ttk.LabelFrame(self.conn_frame, text="Impostazioni Server", padding=10)
+        # Server info (fisso)
+        server_frame = ttk.LabelFrame(self.conn_frame, text="Server LightPhon", padding=10)
         server_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        ttk.Label(server_frame, text="URL Server:").grid(row=0, column=0, sticky='w', pady=5)
-        self.server_url = tk.StringVar(value="http://vps-eecab539.vps.ovh.net")
-        ttk.Entry(server_frame, textvariable=self.server_url, width=50).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+        # Server URL fisso - non modificabile
+        # Usa IP diretto finché DNS non è configurato correttamente
+        self.server_url = tk.StringVar(value="http://51.178.142.183:5000")
+        ttk.Label(server_frame, text="Server:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
+        ttk.Label(server_frame, text="lightphon.com (51.178.142.183)", font=('Arial', 10, 'bold'), foreground='green').grid(row=0, column=1, sticky='w', padx=10, pady=5)
         
         ttk.Label(server_frame, text="Nome Nodo:").grid(row=1, column=0, sticky='w', pady=5)
         self.node_name = tk.StringVar(value="")
@@ -870,10 +872,12 @@ class NodeGUI:
     
     def _load_config(self):
         """Carica configurazione"""
+        # Server fisso - usa IP diretto
+        self.server_url.set("http://51.178.142.183:5000")
+        
         if os.path.exists(self.config_path):
             self.config.read(self.config_path)
             
-            self.server_url.set(self.config.get('Server', 'URL', fallback='http://vps-eecab539.vps.ovh.net'))
             self.node_name.set(self.config.get('Node', 'name', fallback=''))
             self.token.set(self.config.get('Node', 'token', fallback=''))
             # Supporta sia il nuovo 'command' che il vecchio 'bin'
@@ -899,7 +903,8 @@ class NodeGUI:
             if section not in self.config:
                 self.config[section] = {}
         
-        self.config['Server']['URL'] = self.server_url.get()
+        # Server sempre fisso
+        self.config['Server']['URL'] = "http://51.178.142.183:5000"
         self.config['Node']['name'] = self.node_name.get()
         self.config['Node']['token'] = self.token.get()
         self.config['LLM']['command'] = self.llama_command.get()
