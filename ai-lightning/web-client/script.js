@@ -52,6 +52,9 @@ let llmParams = {
     samplers: "penalties;dry;top_k;typical_p;top_p;min_p;xtc;temperature"
 };
 
+// Flag per sessione attiva (blocca navigazione)
+let sessionActive = false;
+
 // ===========================================
 // Initialization
 // ===========================================
@@ -64,6 +67,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup context slider
     setupContextSlider();
+    
+    // Protezione contro navigazione durante sessione attiva
+    window.addEventListener('beforeunload', (e) => {
+        if (sessionActive && currentSession) {
+            e.preventDefault();
+            e.returnValue = 'You have an active session. Leaving will keep the node occupied. Please click "End Session" first.';
+            return e.returnValue;
+        }
+    });
     
     if (authToken) {
         connectSocket();
@@ -971,6 +983,9 @@ function startChatUI() {
     currentStreamingMessageId = null;
     streamingContent = '';
     
+    // Segna sessione come attiva (blocca navigazione)
+    sessionActive = true;
+    
     document.getElementById('prompt').disabled = false;
     document.getElementById('send-btn').disabled = false;
     document.getElementById('prompt').focus();
@@ -985,6 +1000,9 @@ function endSession() {
         if (socket && currentSession) {
             socket.emit('end_session', { session_id: currentSession });
         }
+        
+        // Libera sessione - permetti navigazione
+        sessionActive = false;
         
         currentSession = null;
         selectedModel = null;
@@ -1146,6 +1164,13 @@ function connectSocket() {
         console.log('Session ended by server');
         // La sessione è stata chiusa (potrebbe essere stata chiusa dal server)
         addMessage('System', 'Session ended. The AI model has been stopped.');
+    });
+    
+    // Evento: un nodo è stato liberato, aggiorna la lista modelli
+    socket.on('node_freed', (data) => {
+        console.log('Node freed:', data.node_id);
+        // Ricarica modelli per aggiornare disponibilità
+        loadModels();
     });
 
     socket.on('disconnect', () => {

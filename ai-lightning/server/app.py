@@ -890,11 +890,14 @@ def end_session(data):
                 logger.info(f"Node {node_id} not in connected_nodes, trying HTTP")
                 get_node_manager().stop_remote_session(node_id, session.id)
         
+        # Salva node_id prima di marcare inattiva
+        freed_node_id = session.node_id
+        
         session.active = False
         db.session.commit()
         
         # Aggiorna statistiche nodo (sessione completata)
-        if session.node_id and session.node_id != 'pending' and session.node_id in connected_nodes:
+        if freed_node_id and freed_node_id != 'pending' and freed_node_id in connected_nodes:
             # Calcola minuti attivi (se abbiamo start time)
             minutes_active = 0
             if session.created_at:
@@ -902,14 +905,22 @@ def end_session(data):
                 minutes_active = delta.total_seconds() / 60
             
             update_node_stats_internal(
-                session.node_id, 
+                freed_node_id, 
                 add_completed=True,
                 add_minutes=minutes_active
             )
         
         leave_room(str(session.id))
         emit('session_ended', room=str(session.id))
-        logger.info(f"Session {session.id} ended by user {user_id}")
+        
+        # Notifica a TUTTI i client che il nodo è ora disponibile
+        # Questo aggiorna immediatamente la lista modelli per tutti
+        socketio.emit('node_freed', {
+            'node_id': freed_node_id,
+            'message': 'Node is now available'
+        })
+        
+        logger.info(f"Session {session.id} ended by user {user_id}, node {freed_node_id} freed")
 
 # Admin routes
 @app.route('/admin/nodes')
