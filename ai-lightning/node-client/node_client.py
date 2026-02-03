@@ -609,6 +609,7 @@ class NodeClient:
         # GUI callbacks for LLM output visualization
         self.gui_prompt_callback = None  # Called with (session_id, prompt)
         self.gui_token_callback = None   # Called with (token, is_final)
+        self.gui_session_ended_callback = None  # Called with (session_id) when session is stopped
         
         self._setup_handlers()
     
@@ -794,18 +795,33 @@ class NodeClient:
         def on_stop_session(data):
             """Richiesta di fermare una sessione"""
             session_id = str(data['session_id'])
-            logger.info(f"Received stop_session request for session {session_id}")
+            logger.info(f"[STOP_SESSION] Received stop_session request for session {session_id}")
+            logger.info(f"[STOP_SESSION] Active sessions: {list(self.active_sessions.keys())}")
             
             if session_id in self.active_sessions:
                 llama_process = self.active_sessions[session_id]
+                logger.info(f"[STOP_SESSION] Found session {session_id}, stopping llama-server process...")
+                
                 # Prima richiedi lo stop dello streaming (se in corso)
                 llama_process.request_stop_streaming()
+                
                 # Poi ferma il processo
                 llama_process.stop()
+                
+                # Rimuovi dalla lista delle sessioni attive
                 del self.active_sessions[session_id]
-                logger.info(f"Session {session_id} stopped and streaming interrupted")
+                
+                logger.info(f"[STOP_SESSION] Session {session_id} stopped - llama-server process terminated")
+                logger.info(f"[STOP_SESSION] Remaining active sessions: {list(self.active_sessions.keys())}")
+                
+                # Notifica la GUI che la sessione è stata fermata
+                if self.gui_session_ended_callback:
+                    try:
+                        self.gui_session_ended_callback(session_id)
+                    except Exception as e:
+                        logger.error(f"GUI session ended callback error: {e}")
             else:
-                logger.warning(f"Session {session_id} not found in active sessions")
+                logger.warning(f"[STOP_SESSION] Session {session_id} not found in active sessions")
             
             self.sio.emit('session_stopped', {'session_id': session_id})
         

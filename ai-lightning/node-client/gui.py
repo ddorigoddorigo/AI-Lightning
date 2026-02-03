@@ -485,6 +485,24 @@ class NodeGUI:
                 self.llm_output_text.config(state='disabled')
         
         self.root.after(0, update)
+    
+    def llm_session_ended(self, session_id):
+        """Callback quando una sessione viene terminata dall'utente"""
+        def update():
+            self.llm_output_text.config(state='normal')
+            self.llm_output_text.insert(tk.END, f"\n\n🛑 Sessione {session_id} terminata dall'utente.\n")
+            self.llm_output_text.insert(tk.END, "Il modello è stato scaricato dalla memoria.\n")
+            self.llm_output_text.config(state='disabled')
+            
+            if self.llm_autoscroll.get():
+                self.llm_output_text.see(tk.END)
+            
+            # Reset stato
+            self.llm_prompt_var.set("(In attesa di nuova sessione...)")
+            self.llm_token_count = 0
+            self.llm_tokens_var.set("Token: 0")
+        
+        self.root.after(0, update)
 
     def _create_stats_tab(self):
         """Tab statistiche nodo"""
@@ -903,6 +921,7 @@ class NodeGUI:
                 # Collega callbacks GUI per visualizzare output LLM
                 self.client.gui_prompt_callback = self.llm_set_prompt
                 self.client.gui_token_callback = self.llm_add_token
+                self.client.gui_session_ended_callback = self.llm_session_ended
                 
                 # Passa info hardware e modelli
                 if self.system_info:
