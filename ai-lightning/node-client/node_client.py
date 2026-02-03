@@ -12,6 +12,8 @@ import base64
 import subprocess
 import threading
 import logging
+import signal
+import atexit
 import socketio
 import httpx
 import requests
@@ -605,6 +607,18 @@ class NodeClient:
                 })
                 return
             
+            # IMPORTANTE: Chiudi tutte le sessioni esistenti prima di avviarne una nuova
+            # (solo un modello alla volta può essere caricato)
+            if self.active_sessions:
+                logger.info(f"Closing {len(self.active_sessions)} existing session(s) before starting new one")
+                for old_session_id, old_llama in list(self.active_sessions.items()):
+                    logger.info(f"Stopping existing session {old_session_id}")
+                    old_llama.request_stop_streaming()
+                    old_llama.stop()
+                    # Notifica server che la sessione è stata chiusa
+                    self.sio.emit('session_stopped', {'session_id': old_session_id})
+                self.active_sessions.clear()
+            
             # Trova porta libera
             port = self._find_free_port()
             
@@ -909,17 +923,34 @@ class NodeClient:
         logger.info(f"Synced {len(models)} models with server")
         return True
     
+    def cleanup_all_sessions(self):
+        """Ferma tutte le sessioni llama-server attive"""
+        if not self.active_sessions:
+            return
+        
+        logger.info(f"Cleaning up {len(self.active_sessions)} active session(s)...")
+        for session_id, llama in list(self.active_sessions.items()):
+            try:
+                logger.info(f"Stopping llama-server for session {session_id}")
+                llama.request_stop_streaming()
+                llama.stop()
+            except Exception as e:
+                logger.error(f"Error stopping session {session_id}: {e}")
+        self.active_sessions.clear()
+        logger.info("All sessions cleaned up")
+    
     def disconnect(self):
         """Disconnetti e ferma tutto"""
         self.running = False
         self._connected = False
         
         # Ferma tutte le sessioni
-        for session_id, llama in list(self.active_sessions.items()):
-            llama.stop()
-        self.active_sessions.clear()
+        self.cleanup_all_sessions()
         
-        self.sio.disconnect()
+        try:
+            self.sio.disconnect()
+        except:
+            pass
     
     def run(self):
         """Main loop con reconnect automatico"""
@@ -1065,10 +1096,27 @@ if __name__ == '__main__':
     if args.server:
         client.server_url = args.server
     
+    # Signal handler per terminazione pulita
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down...")
+        client.cleanup_all_sessions()
+        client.disconnect()
+        sys.exit(0)
+    
+    # Registra handlers per SIGINT (Ctrl+C) e SIGTERM
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Registra cleanup anche per atexit (chiusura normale)
+    atexit.register(client.cleanup_all_sessions)
+    
     try:
         if client.connect():
             client.wait()
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        logger.info("Shutting down (KeyboardInterrupt)...")
+    except Exception as e:
+        logger.error(f"Error: {e}")
     finally:
+        client.cleanup_all_sessions()
         client.disconnect()

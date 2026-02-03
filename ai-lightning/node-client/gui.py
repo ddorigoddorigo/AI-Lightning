@@ -1453,5 +1453,32 @@ Il modello verrà scaricato automaticamente da HuggingFace quando avvii una sess
 
 
 if __name__ == '__main__':
+    import signal
+    import atexit
+    
     app = NodeGUI()
-    app.run()
+    
+    # Cleanup function
+    def cleanup():
+        if app.client:
+            print("Cleaning up llama-server processes...")
+            app.client.cleanup_all_sessions()
+            app.client.disconnect()
+    
+    # Signal handler per Ctrl+C
+    def signal_handler(signum, frame):
+        print(f"\nReceived signal {signum}, cleaning up...")
+        cleanup()
+        sys.exit(0)
+    
+    # Registra handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    atexit.register(cleanup)
+    
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        cleanup()
