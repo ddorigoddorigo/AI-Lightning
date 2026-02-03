@@ -1433,12 +1433,22 @@ function showNodesInfo() {
     if (onlineNodes.length === 0) {
         list.innerHTML = '<p>No nodes online</p>';
     } else {
-        list.innerHTML = onlineNodes.map(node => `
+        list.innerHTML = onlineNodes.map(node => {
+            // Formatta RAM con tipo e velocità
+            let ramStr = `${node.hardware?.ram_gb || 0} GB`;
+            if (node.hardware?.ram_type && node.hardware.ram_type !== 'Unknown') {
+                ramStr += ` ${node.hardware.ram_type}`;
+            }
+            if (node.hardware?.ram_speed_mhz && node.hardware.ram_speed_mhz > 0) {
+                ramStr += `-${node.hardware.ram_speed_mhz}`;
+            }
+            
+            return `
             <div class="node-card">
                 <div class="node-name">${node.name}</div>
                 <div class="node-info">
                     <span>CPU: ${node.hardware?.cpu || 'Unknown'}</span>
-                    <span>RAM: ${node.hardware?.ram_gb || 0} GB</span>
+                    <span>RAM: ${ramStr}</span>
                 </div>
                 <div class="node-gpus">
                     ${(node.hardware?.gpus || []).map(gpu => `
@@ -1450,7 +1460,7 @@ function showNodesInfo() {
                 </div>
                 <div class="node-models">Models: ${node.models_count}</div>
             </div>
-        `).join('');
+        `}).join('');
     }
     
     modal.style.display = 'flex';

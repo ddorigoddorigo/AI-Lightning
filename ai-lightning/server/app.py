@@ -389,6 +389,12 @@ def get_online_nodes():
         models = info.get('models', [])
         is_busy = node_id in busy_nodes
         
+        # Estrai info RAM
+        ram_info = hardware.get('ram', {})
+        ram_gb = ram_info.get('total_gb', 0)
+        ram_speed = ram_info.get('speed_mhz', 0)
+        ram_type = ram_info.get('type', '')
+        
         nodes.append({
             'node_id': node_id,
             'name': info.get('name', node_id),
@@ -397,7 +403,9 @@ def get_online_nodes():
             'hardware': {
                 'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
                 'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
-                'ram_gb': hardware.get('ram', {}).get('total_gb', 0),
+                'ram_gb': ram_gb,
+                'ram_speed_mhz': ram_speed,
+                'ram_type': ram_type,
                 'gpus': [
                     {
                         'name': gpu.get('name', 'Unknown'),

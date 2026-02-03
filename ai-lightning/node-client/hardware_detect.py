@@ -78,7 +78,14 @@ def get_cpu_info():
 
 
 def get_ram_info():
-    """Rileva quantità di RAM in GB."""
+    """Rileva quantità e velocità della RAM."""
+    result = {
+        'total_gb': 0,
+        'available_gb': 0,
+        'speed_mhz': 0,
+        'type': 'Unknown'
+    }
+    
     try:
         if sys.platform == 'win32':
             import ctypes
@@ -100,12 +107,51 @@ def get_ram_info():
             stat.dwLength = ctypes.sizeof(stat)
             ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
             
-            return {
-                'total_gb': round(stat.ullTotalPhys / (1024**3), 1),
-                'available_gb': round(stat.ullAvailPhys / (1024**3), 1)
-            }
+            result['total_gb'] = round(stat.ullTotalPhys / (1024**3), 1)
+            result['available_gb'] = round(stat.ullAvailPhys / (1024**3), 1)
+            
+            # Rileva velocità RAM su Windows con wmic
+            try:
+                speed_result = subprocess.run(
+                    ['wmic', 'memorychip', 'get', 'speed'],
+                    capture_output=True, text=True, timeout=10
+                )
+                speeds = []
+                for line in speed_result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if line.isdigit():
+                        speeds.append(int(line))
+                if speeds:
+                    result['speed_mhz'] = max(speeds)  # Usa la velocità più alta
+            except:
+                pass
+            
+            # Rileva tipo RAM (DDR3, DDR4, DDR5)
+            try:
+                type_result = subprocess.run(
+                    ['wmic', 'memorychip', 'get', 'SMBIOSMemoryType'],
+                    capture_output=True, text=True, timeout=10
+                )
+                for line in type_result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if line.isdigit():
+                        mem_type = int(line)
+                        # SMBIOSMemoryType codes
+                        type_map = {
+                            20: 'DDR',
+                            21: 'DDR2',
+                            22: 'DDR2',
+                            24: 'DDR3',
+                            26: 'DDR4',
+                            34: 'DDR5'
+                        }
+                        result['type'] = type_map.get(mem_type, f'Type{mem_type}')
+                        break
+            except:
+                pass
+                
         else:
-            # Linux
+            # Linux - quantità RAM
             with open('/proc/meminfo', 'r') as f:
                 meminfo = f.read()
             
@@ -116,13 +162,30 @@ def get_ram_info():
                 elif 'MemAvailable' in line:
                     available = int(line.split()[1]) / (1024**2)
             
-            return {
-                'total_gb': round(total, 1),
-                'available_gb': round(available, 1)
-            }
+            result['total_gb'] = round(total, 1)
+            result['available_gb'] = round(available, 1)
+            
+            # Velocità RAM su Linux con dmidecode (richiede root)
+            try:
+                speed_result = subprocess.run(
+                    ['sudo', 'dmidecode', '-t', 'memory'],
+                    capture_output=True, text=True, timeout=10
+                )
+                for line in speed_result.stdout.split('\n'):
+                    if 'Speed:' in line and 'Unknown' not in line and 'Configured' not in line:
+                        speed_str = line.split(':')[1].strip().split()[0]
+                        if speed_str.isdigit():
+                            result['speed_mhz'] = int(speed_str)
+                            break
+                    if 'Type:' in line and 'DDR' in line:
+                        result['type'] = line.split(':')[1].strip()
+            except:
+                pass
+                
     except Exception as e:
         logger.error(f"Error detecting RAM: {e}")
-        return {'total_gb': 0, 'available_gb': 0}
+    
+    return result
 
 
 def get_nvidia_gpus():
@@ -322,6 +385,14 @@ def get_system_info():
 
 def format_system_info(info):
     """Formatta le info di sistema in stringa leggibile."""
+    # Formatta info RAM con velocità
+    ram_info = info['ram']
+    ram_str = f"{ram_info['total_gb']} GB"
+    if ram_info.get('type') and ram_info['type'] != 'Unknown':
+        ram_str += f" {ram_info['type']}"
+    if ram_info.get('speed_mhz') and ram_info['speed_mhz'] > 0:
+        ram_str += f"-{ram_info['speed_mhz']}"
+    
     lines = [
         f"Sistema: {info['platform']} {info['platform_release']} ({info['architecture']})",
         f"",
@@ -329,7 +400,7 @@ def format_system_info(info):
         f"  - Core fisici: {info['cpu']['cores_physical']}",
         f"  - Core logici: {info['cpu']['cores_logical']}",
         f"",
-        f"RAM: {info['ram']['total_gb']} GB totali, {info['ram']['available_gb']} GB disponibili",
+        f"RAM: {ram_str} ({ram_info['available_gb']} GB disponibili)",
         f""
     ]
     
