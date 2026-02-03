@@ -80,6 +80,15 @@
                     <span id="estimated-cost">-</span>
                 </div>
                 
+                <!-- Context Length Slider -->
+                <div class="config-row context-row">
+                    <label for="context-slider">Context Length:</label>
+                    <div class="context-slider-container">
+                        <input type="range" id="context-slider" min="512" max="32768" step="512" value="4096">
+                        <span id="context-value" class="slider-value">4096</span>
+                    </div>
+                </div>
+                
                 <div class="session-buttons">
                     <button onclick="createSession()" class="btn-primary">⚡ Buy Session</button>
                     <button onclick="openLLMSettings()" class="btn-settings" title="LLM Generation Settings">🎛️ Settings</button>

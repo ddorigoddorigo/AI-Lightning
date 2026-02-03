@@ -449,6 +449,67 @@ button:disabled {
     color: var(--text-muted);
 }
 
+/* Context Slider */
+.context-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.context-row label {
+    margin-bottom: 5px;
+}
+
+.context-slider-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+}
+
+.context-slider-container input[type="range"] {
+    flex: 1;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--surface-light);
+    appearance: none;
+    cursor: pointer;
+}
+
+.context-slider-container input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.context-slider-container input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.context-slider-container input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: none;
+}
+
+.slider-value {
+    min-width: 60px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--primary);
+    font-family: 'Courier New', monospace;
+    background: var(--surface-light);
+    padding: 5px 10px;
+    border-radius: 6px;
+}
+
 /* ===========================================
    Advanced LLM Parameters
    =========================================== */

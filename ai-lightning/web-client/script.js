@@ -16,6 +16,9 @@ let onlineNodes = [];
 let isWaitingForResponse = false;
 let modelsRefreshInterval = null;
 
+// Session configuration
+let sessionContextLength = 4096;
+
 // LLM Parameters (with defaults)
 let llmParams = {
     // Sampling parameters
@@ -58,6 +61,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup slider listeners per parametri LLM
     setupLLMParamSliders();
+    
+    // Setup context slider
+    setupContextSlider();
     
     if (authToken) {
         connectSocket();
@@ -534,7 +540,34 @@ function selectModel(model) {
     // Reset parametri LLM ai valori di default
     resetLLMParams();
     
+    // Imposta context length dal modello (o default 4096)
+    const modelContext = model.context_length || 4096;
+    sessionContextLength = Math.min(modelContext, 32768);
+    
+    // Aggiorna slider context
+    const contextSlider = document.getElementById('context-slider');
+    const contextValue = document.getElementById('context-value');
+    if (contextSlider) {
+        contextSlider.max = modelContext;
+        contextSlider.value = sessionContextLength;
+    }
+    if (contextValue) {
+        contextValue.textContent = sessionContextLength;
+    }
+    
     updateEstimatedCost();
+}
+
+function setupContextSlider() {
+    const slider = document.getElementById('context-slider');
+    const valueEl = document.getElementById('context-value');
+    
+    if (slider && valueEl) {
+        slider.addEventListener('input', () => {
+            sessionContextLength = parseInt(slider.value);
+            valueEl.textContent = sessionContextLength;
+        });
+    }
 }
 
 function cancelModelSelection() {
@@ -753,7 +786,8 @@ async function createSession() {
             },
             body: JSON.stringify({
                 model: selectedModel.id || selectedModel.name,
-                minutes: minutes
+                minutes: minutes,
+                context_length: sessionContextLength
             })
         });
 

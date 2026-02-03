@@ -43,6 +43,7 @@ class Session(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    context_length = db.Column(db.Integer, default=4096)  # Context length for the model
 
     user = db.relationship('User', backref='sessions')
 

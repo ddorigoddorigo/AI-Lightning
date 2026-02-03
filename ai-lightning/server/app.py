@@ -481,6 +481,14 @@ def new_session():
         if minutes < 1 or minutes > 120:
             return jsonify({'error': 'Minutes must be between 1 and 120'}), 400
 
+        # Context length (default 4096)
+        context_length = data.get('context_length', 4096)
+        try:
+            context_length = int(context_length)
+            context_length = max(512, min(context_length, 131072))  # Clamp between 512 and 128k
+        except (ValueError, TypeError):
+            context_length = 4096
+
         # Crea fattura (usa prezzo dal nodo se disponibile)
         amount = get_model_price(model_requested, model_price) * minutes
         
@@ -499,7 +507,8 @@ def new_session():
             node_id='pending',
             model=model_requested,
             payment_hash=invoice['r_hash'],
-            expires_at=datetime.utcnow() + timedelta(minutes=minutes)
+            expires_at=datetime.utcnow() + timedelta(minutes=minutes),
+            context_length=context_length
         )
         db.session.add(session)
         db.session.commit()
@@ -649,6 +658,10 @@ def start_session(data):
                         if model_id == session.model or m.get('name') == session.model:
                             context = m.get('context_length', m.get('context', 4096))
                             break
+            
+            # Usa il context_length della sessione (scelto dall'utente) se disponibile
+            if hasattr(session, 'context_length') and session.context_length:
+                context = session.context_length
             
             # Invia richiesta al nodo
             socketio.emit('start_session', {
