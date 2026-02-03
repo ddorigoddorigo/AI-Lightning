@@ -497,8 +497,13 @@ class NodeGUI:
             if self.llm_autoscroll.get():
                 self.llm_output_text.see(tk.END)
             
-            # Reset stato
-            self.llm_prompt_var.set("(In attesa di nuova sessione...)")
+            # Reset stato prompt
+            self.llm_prompt_text.config(state='normal')
+            self.llm_prompt_text.delete('1.0', tk.END)
+            self.llm_prompt_text.insert(tk.END, "(In attesa di nuova sessione...)")
+            self.llm_prompt_text.config(state='disabled')
+            
+            # Reset token counter
             self.llm_token_count = 0
             self.llm_tokens_var.set("Token: 0")
         
