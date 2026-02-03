@@ -237,38 +237,69 @@ def get_busy_node_ids():
     return busy_nodes
 
 
+def get_busy_nodes_info():
+    """
+    Restituisce un dizionario con info sui nodi occupati, incluso il tempo rimanente.
+    Returns: {node_id: {'expires_at': datetime, 'seconds_remaining': int, 'model': str}}
+    """
+    busy_info = {}
+    
+    # Query per sessioni attive
+    active_sessions = Session.query.filter(
+        Session.active == True,
+        Session.node_id != None,
+        Session.node_id != 'pending',
+        Session.expires_at > datetime.utcnow()
+    ).all()
+    
+    now = datetime.utcnow()
+    for session in active_sessions:
+        seconds_remaining = int((session.expires_at - now).total_seconds())
+        busy_info[session.node_id] = {
+            'expires_at': session.expires_at.isoformat(),
+            'seconds_remaining': max(0, seconds_remaining),
+            'model': session.model
+        }
+    
+    return busy_info
+
+
 @app.route('/api/models/available', methods=['GET'])
 def get_available_models():
     """
     Restituisce lista aggregata di tutti i modelli disponibili dai nodi online.
-    Esclude i nodi attualmente in uso da altri utenti.
+    Include sia modelli disponibili che quelli su nodi occupati (con timer).
     Non richiede autenticazione.
     """
-    models_map = {}  # model_id -> model_info + nodes_count
+    available_models = {}  # model_id -> model_info per modelli disponibili
+    busy_models = {}  # model_id -> model_info per modelli su nodi occupati
     
-    # Ottieni i nodi attualmente occupati
-    busy_nodes = get_busy_node_ids()
+    # Ottieni info sui nodi occupati (con tempo rimanente)
+    busy_nodes_info = get_busy_nodes_info()
+    busy_node_ids = set(busy_nodes_info.keys())
     available_nodes_count = 0
     
-    # Raccogli modelli dai nodi WebSocket connessi (solo quelli liberi)
+    # Raccogli modelli da TUTTI i nodi WebSocket connessi
     for node_id, info in connected_nodes.items():
-        # Salta i nodi già in uso
-        if node_id in busy_nodes:
-            logger.debug(f"Node {node_id} is busy, skipping from available models")
-            continue
+        is_busy = node_id in busy_node_ids
         
-        available_nodes_count += 1
+        if not is_busy:
+            available_nodes_count += 1
+            
         node_models = info.get('models', [])
         hardware = info.get('hardware', {})
         node_name = info.get('name', node_id)
+        
+        # Scegli quale dizionario usare
+        target_map = busy_models if is_busy else available_models
         
         for model in node_models:
             if isinstance(model, dict):
                 # Nuovo formato con info complete
                 model_id = model.get('id', model.get('name', 'unknown'))
                 
-                if model_id not in models_map:
-                    models_map[model_id] = {
+                if model_id not in target_map:
+                    target_map[model_id] = {
                         'id': model_id,
                         'name': model.get('name', model_id),
                         'parameters': model.get('parameters', 'Unknown'),
@@ -277,46 +308,68 @@ def get_available_models():
                         'architecture': model.get('architecture', 'unknown'),
                         'size_gb': model.get('size_gb', 0),
                         'min_vram_mb': model.get('min_vram_mb', 0),
+                        'available': not is_busy,
                         'nodes_count': 0,
                         'nodes': []
                     }
                 
-                models_map[model_id]['nodes_count'] += 1
-                models_map[model_id]['nodes'].append({
+                target_map[model_id]['nodes_count'] += 1
+                node_info = {
                     'node_id': node_id,
                     'node_name': node_name,
                     'vram_available': hardware.get('total_vram_mb', 0)
-                })
+                }
+                
+                # Aggiungi info timer se occupato
+                if is_busy and node_id in busy_nodes_info:
+                    node_info['busy'] = True
+                    node_info['seconds_remaining'] = busy_nodes_info[node_id]['seconds_remaining']
+                    node_info['expires_at'] = busy_nodes_info[node_id]['expires_at']
+                    # Aggiungi anche al modello stesso per facile accesso
+                    target_map[model_id]['seconds_remaining'] = busy_nodes_info[node_id]['seconds_remaining']
+                    target_map[model_id]['expires_at'] = busy_nodes_info[node_id]['expires_at']
+                
+                target_map[model_id]['nodes'].append(node_info)
             else:
                 # Vecchio formato - solo nome modello
                 model_name = str(model)
-                if model_name not in models_map:
-                    models_map[model_name] = {
+                if model_name not in target_map:
+                    target_map[model_name] = {
                         'id': model_name,
                         'name': model_name,
                         'parameters': 'Unknown',
                         'quantization': 'Unknown',
                         'context_length': 4096,
                         'architecture': 'unknown',
+                        'available': not is_busy,
                         'nodes_count': 0,
                         'nodes': []
                     }
                 
-                models_map[model_name]['nodes_count'] += 1
-                models_map[model_name]['nodes'].append({
-                    'node_id': node_id,
-                    'node_name': node_name
-                })
+                target_map[model_name]['nodes_count'] += 1
+                node_info = {'node_id': node_id, 'node_name': node_name}
+                
+                if is_busy and node_id in busy_nodes_info:
+                    node_info['busy'] = True
+                    node_info['seconds_remaining'] = busy_nodes_info[node_id]['seconds_remaining']
+                    target_map[model_name]['seconds_remaining'] = busy_nodes_info[node_id]['seconds_remaining']
+                    target_map[model_name]['expires_at'] = busy_nodes_info[node_id]['expires_at']
+                
+                target_map[model_name]['nodes'].append(node_info)
     
-    # Converti in lista e ordina per disponibilità (più nodi = più affidabile)
-    models_list = list(models_map.values())
-    models_list.sort(key=lambda x: (-x['nodes_count'], x['name']))
+    # Converti in liste e ordina
+    available_list = list(available_models.values())
+    available_list.sort(key=lambda x: (-x['nodes_count'], x['name']))
+    
+    busy_list = list(busy_models.values())
+    busy_list.sort(key=lambda x: (x.get('seconds_remaining', 0), x['name']))
     
     return jsonify({
-        'models': models_list,
+        'models': available_list,  # Modelli disponibili (retrocompatibilità)
+        'busy_models': busy_list,  # Modelli su nodi occupati con timer
         'total_nodes_online': len(connected_nodes),
         'available_nodes': available_nodes_count,
-        'busy_nodes': len(busy_nodes),
+        'busy_nodes': len(busy_node_ids),
         'timestamp': datetime.utcnow().isoformat()
     })
 

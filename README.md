@@ -1,7 +1,8 @@
-# AI Lightning
+# LightPhon ⚡
 
-## Descrizione
-Sistema decentralizzato per ofere potenza di calcolo LLM a pagamento via Lightning Network.
+## Decentralized LLMs with Lightning payments
+
+Sistema decentralizzato per offrire potenza di calcolo LLM a pagamento via Lightning Network.
 
 ## Architettura
 - **Server Principale**: Coordina utenti, sessioni e nodi

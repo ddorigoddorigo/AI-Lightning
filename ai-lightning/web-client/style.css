@@ -366,6 +366,63 @@ button:disabled {
 }
 
 /* ===========================================
+   Model Card - Busy State
+   =========================================== */
+.model-card.model-busy {
+    position: relative;
+    opacity: 0.6;
+    filter: grayscale(70%);
+    border: 2px solid var(--surface-light);
+    pointer-events: none;
+}
+
+.model-card.model-busy:hover {
+    transform: none;
+    border-color: var(--surface-light);
+    box-shadow: none;
+}
+
+.model-busy-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: var(--border-radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.model-busy-overlay .busy-icon {
+    font-size: 2em;
+    animation: pulse 2s infinite;
+}
+
+.model-busy-overlay .busy-text {
+    font-weight: 600;
+    color: var(--warning);
+    font-size: 1.1em;
+}
+
+.model-busy-overlay .busy-timer {
+    background: var(--surface);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.9em;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ===========================================
    Session Config
    =========================================== */
 #session-config {

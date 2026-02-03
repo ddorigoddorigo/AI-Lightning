@@ -316,14 +316,16 @@ async function loadModels() {
         const data = await response.json();
         
         availableModels = data.models || [];
+        const busyModels = data.busy_models || [];
+        
         if (loading) loading.style.display = 'none';
         
-        if (availableModels.length === 0) {
+        if (availableModels.length === 0 && busyModels.length === 0) {
             if (grid) grid.innerHTML = '<div class="no-models">No models available. Waiting for nodes to connect...</div>';
             return;
         }
         
-        renderModelsGrid(availableModels);
+        renderModelsGrid(availableModels, busyModels);
         
     } catch (error) {
         if (loading) loading.style.display = 'none';
@@ -331,27 +333,39 @@ async function loadModels() {
     }
 }
 
-function renderModelsGrid(models) {
+function formatTimeRemaining(seconds) {
+    if (seconds <= 0) return 'Available soon';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins > 0) {
+        return `${mins}m ${secs}s`;
+    }
+    return `${secs}s`;
+}
+
+function renderModelsGrid(models, busyModels = []) {
     const grid = document.getElementById('models-grid');
     if (!grid) return;
     grid.innerHTML = '';
     
+    // Determina icona in base all'architettura
+    const icons = {
+        'llama': '🦙',
+        'mistral': '🌪️',
+        'phi': 'φ',
+        'qwen': '🐼',
+        'deepseek': '🔍',
+        'gemma': '💎',
+        'codellama': '💻',
+        'default': '🧠'
+    };
+    
+    // Render modelli disponibili
     models.forEach(model => {
         const card = document.createElement('div');
         card.className = 'model-card';
         card.onclick = () => selectModel(model);
         
-        // Determina icona in base all'architettura
-        const icons = {
-            'llama': '🦙',
-            'mistral': '🌪️',
-            'phi': 'φ',
-            'qwen': '🐼',
-            'deepseek': '🔍',
-            'gemma': '💎',
-            'codellama': '💻',
-            'default': '🧠'
-        };
         const icon = icons[model.architecture] || icons.default;
         
         // Badge disponibilità
@@ -375,6 +389,72 @@ function renderModelsGrid(models) {
         
         grid.appendChild(card);
     });
+    
+    // Render modelli occupati (in grigio con timer)
+    busyModels.forEach(model => {
+        const card = document.createElement('div');
+        card.className = 'model-card model-busy';
+        // Non cliccabile quando occupato
+        card.style.cursor = 'not-allowed';
+        
+        const icon = icons[model.architecture] || icons.default;
+        const timeRemaining = model.seconds_remaining || 0;
+        const timerId = `timer-${model.id}`;
+        
+        card.innerHTML = `
+            <div class="model-icon">${icon}</div>
+            <div class="model-name">${model.name}</div>
+            <div class="model-info">
+                <span class="param">${model.parameters}</span>
+                <span class="quant">${model.quantization}</span>
+            </div>
+            <div class="model-specs">
+                <span>Context: ${(model.context_length || 4096).toLocaleString()}</span>
+                <span>VRAM: ${model.min_vram_mb ? (model.min_vram_mb/1024).toFixed(1) + 'GB' : '?'}</span>
+            </div>
+            <div class="model-busy-overlay">
+                <span class="busy-icon">⏳</span>
+                <span class="busy-text">In use</span>
+                <span class="busy-timer" id="${timerId}" data-seconds="${timeRemaining}">
+                    Available in: ${formatTimeRemaining(timeRemaining)}
+                </span>
+            </div>
+        `;
+        
+        grid.appendChild(card);
+    });
+    
+    // Avvia timer per aggiornare i countdown
+    startBusyTimers();
+}
+
+function startBusyTimers() {
+    // Aggiorna i timer ogni secondo
+    const timers = document.querySelectorAll('.busy-timer');
+    if (timers.length === 0) return;
+    
+    const updateTimers = () => {
+        timers.forEach(timer => {
+            let seconds = parseInt(timer.dataset.seconds) || 0;
+            if (seconds > 0) {
+                seconds--;
+                timer.dataset.seconds = seconds;
+                timer.textContent = `Available in: ${formatTimeRemaining(seconds)}`;
+            } else {
+                timer.textContent = 'Available soon...';
+            }
+        });
+    };
+    
+    // Aggiorna ogni secondo
+    const intervalId = setInterval(() => {
+        updateTimers();
+        // Controlla se ci sono ancora timer attivi
+        const activeTimers = document.querySelectorAll('.busy-timer');
+        if (activeTimers.length === 0) {
+            clearInterval(intervalId);
+        }
+    }, 1000);
 }
 
 function refreshModels() {
