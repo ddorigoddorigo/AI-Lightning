@@ -361,6 +361,42 @@ def get_gpu_info():
     return gpus
 
 
+def get_disk_info(path=None):
+    """Rileva spazio disco disponibile.
+    
+    Args:
+        path: Path da controllare (default: directory corrente o home)
+        
+    Returns:
+        dict con total_gb, free_gb, used_gb, percent_used
+    """
+    info = {
+        'total_gb': 0,
+        'free_gb': 0,
+        'used_gb': 0,
+        'percent_used': 0
+    }
+    
+    try:
+        import shutil
+        
+        # Usa la directory specificata, o la home, o la directory corrente
+        if not path:
+            path = os.path.expanduser('~')
+        
+        total, used, free = shutil.disk_usage(path)
+        
+        info['total_gb'] = round(total / (1024**3), 1)
+        info['free_gb'] = round(free / (1024**3), 1)
+        info['used_gb'] = round(used / (1024**3), 1)
+        info['percent_used'] = round((used / total) * 100, 1) if total > 0 else 0
+        
+    except Exception as e:
+        logger.error(f"Error getting disk info: {e}")
+    
+    return info
+
+
 def get_system_info():
     """Rileva tutte le informazioni hardware del sistema."""
     info = {
@@ -369,7 +405,8 @@ def get_system_info():
         'architecture': platform.machine(),
         'cpu': get_cpu_info(),
         'ram': get_ram_info(),
-        'gpus': get_gpu_info()
+        'gpus': get_gpu_info(),
+        'disk': get_disk_info()
     }
     
     # Calcola VRAM totale

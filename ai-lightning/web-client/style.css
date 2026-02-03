@@ -278,9 +278,33 @@ button:disabled {
     margin-top: 15px;
 }
 
+.btn-back {
+    background: transparent;
+    border: 1px solid var(--surface-light);
+    color: var(--text-muted);
+    padding: 8px 16px;
+    margin-bottom: 15px;
+    cursor: pointer;
+    border-radius: var(--border-radius);
+    transition: all 0.3s;
+}
+
+.btn-back:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.section-subtitle {
+    color: var(--text-muted);
+    margin-top: -5px;
+    margin-bottom: 20px;
+    font-size: 0.95em;
+}
+
 /* ===========================================
-   Models Section
+   Nodes Section
    =========================================== */
+#nodes-section h3,
 #models-section h3,
 #session-config h3,
 #invoice-section h3,
@@ -288,6 +312,175 @@ button:disabled {
     color: var(--primary);
     margin-top: 0;
 }
+
+#nodes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.node-card {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+}
+
+.node-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-2px);
+}
+
+.node-card.node-busy {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.node-card.node-busy:hover {
+    border-color: transparent;
+    transform: none;
+}
+
+.node-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.node-name {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: var(--text);
+}
+
+.node-status {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.node-status.available {
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--success);
+}
+
+.node-status.busy {
+    background: rgba(244, 67, 54, 0.2);
+    color: var(--error);
+}
+
+.node-specs {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.node-spec {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.node-spec-icon {
+    font-size: 1.1em;
+}
+
+.node-disk-bar {
+    margin-top: 12px;
+    background: var(--surface-light);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.node-disk-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.3s;
+}
+
+.node-disk-fill.warning {
+    background: var(--warning);
+}
+
+.node-disk-fill.danger {
+    background: var(--error);
+}
+
+.node-disk-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.node-models-count {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: var(--secondary);
+}
+
+.node-busy-timer {
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: var(--warning);
+}
+
+/* ===========================================
+   HuggingFace Custom Model Section
+   =========================================== */
+.hf-custom-section {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px dashed var(--surface-light);
+}
+
+.hf-custom-section h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: var(--secondary);
+}
+
+.hf-input-row {
+    display: flex;
+    gap: 10px;
+}
+
+.hf-input-row input {
+    flex: 1;
+    padding: 12px;
+    background: var(--surface-light);
+    border: 1px solid transparent;
+    border-radius: var(--border-radius);
+    color: var(--text);
+    font-size: 0.95em;
+}
+
+.hf-input-row input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.hf-hint {
+    margin-top: 8px;
+    margin-bottom: 0;
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+/* ===========================================
+   Models Section
+   =========================================== */
 
 .loading-spinner {
     text-align: center;

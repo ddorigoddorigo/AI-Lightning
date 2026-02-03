@@ -382,12 +382,13 @@ def get_online_nodes():
     Non richiede autenticazione.
     """
     nodes = []
-    busy_nodes = get_busy_node_ids()
+    busy_nodes_info = get_busy_nodes_info()
+    busy_node_ids = set(busy_nodes_info.keys())
     
     for node_id, info in connected_nodes.items():
         hardware = info.get('hardware', {})
         models = info.get('models', [])
-        is_busy = node_id in busy_nodes
+        is_busy = node_id in busy_node_ids
         
         # Estrai info RAM
         ram_info = hardware.get('ram', {})
@@ -395,9 +396,13 @@ def get_online_nodes():
         ram_speed = ram_info.get('speed_mhz', 0)
         ram_type = ram_info.get('type', '')
         
-        nodes.append({
+        # Estrai info disco
+        disk_info = hardware.get('disk', {})
+        
+        node_data = {
             'node_id': node_id,
             'name': info.get('name', node_id),
+            'models': models,  # Lista completa modelli
             'models_count': len(models),
             'status': 'busy' if is_busy else 'available',
             'hardware': {
@@ -414,15 +419,28 @@ def get_online_nodes():
                     }
                     for gpu in hardware.get('gpus', [])
                 ],
-                'total_vram_mb': hardware.get('total_vram_mb', 0)
+                'total_vram_mb': hardware.get('total_vram_mb', 0),
+                'disk_total_gb': disk_info.get('total_gb', 0),
+                'disk_free_gb': disk_info.get('free_gb', 0),
+                'disk_percent_used': disk_info.get('percent_used', 0)
             }
-        })
+        }
+        
+        # Se occupato, aggiungi info sul tempo rimanente
+        if is_busy:
+            busy_info = busy_nodes_info.get(node_id, {})
+            node_data['busy_info'] = {
+                'seconds_remaining': busy_info.get('seconds_remaining', 0),
+                'model': busy_info.get('model', 'Unknown')
+            }
+        
+        nodes.append(node_data)
     
     return jsonify({
         'nodes': nodes,
         'count': len(nodes),
-        'available': len(nodes) - len(busy_nodes),
-        'busy': len(busy_nodes),
+        'available': len(nodes) - len(busy_node_ids),
+        'busy': len(busy_node_ids),
         'timestamp': datetime.utcnow().isoformat()
     })
 
@@ -445,36 +463,70 @@ def new_session():
             
         data = request.get_json()
         model_requested = data['model']
+        requested_node_id = data.get('node_id')  # Nodo specifico richiesto
+        hf_repo = data.get('hf_repo')  # HuggingFace repo per modelli custom
         
-        logger.info(f"New session request: user={user_id}, model={model_requested}")
+        logger.info(f"New session request: user={user_id}, model={model_requested}, node_id={requested_node_id}, hf_repo={hf_repo}")
 
-        # Verifica che ci sia almeno un nodo con questo modello
+        # Se è specificato un node_id, verifica che sia online
         node_with_model = None
         model_price = None
         
-        for node_id, info in connected_nodes.items():
-            node_models = info.get('models', [])
-            
-            # I modelli possono essere una lista di oggetti o una lista di stringhe
-            for model in node_models:
-                model_id = None
-                found_price = None
+        if requested_node_id:
+            # Nodo specifico richiesto
+            if requested_node_id in connected_nodes:
+                info = connected_nodes[requested_node_id]
                 
-                if isinstance(model, dict):
-                    # Nuovo formato: {id, name, path, ...}
-                    model_id = model.get('id') or model.get('name')
-                    found_price = model.get('price_per_minute')
+                # Se è un modello HuggingFace custom, accetta sempre (verrà scaricato)
+                if hf_repo:
+                    node_with_model = requested_node_id
+                    model_price = None  # Default price
                 else:
-                    # Vecchio formato: stringa
-                    model_id = str(model)
+                    # Verifica che il nodo abbia il modello
+                    node_models = info.get('models', [])
+                    for model in node_models:
+                        model_id = None
+                        found_price = None
+                        
+                        if isinstance(model, dict):
+                            model_id = model.get('id') or model.get('name')
+                            found_price = model.get('price_per_minute')
+                        else:
+                            model_id = str(model)
+                        
+                        if model_id == model_requested:
+                            node_with_model = requested_node_id
+                            model_price = found_price
+                            break
+                    
+                    if not node_with_model:
+                        logger.warning(f"Requested node {requested_node_id} doesn't have model {model_requested}")
+                        return jsonify({'error': f'Selected node does not have model: {model_requested}'}), 404
+            else:
+                logger.warning(f"Requested node {requested_node_id} is not online")
+                return jsonify({'error': 'Selected node is not online'}), 404
+        else:
+            # Nessun nodo specifico: cerca automaticamente
+            for node_id, info in connected_nodes.items():
+                node_models = info.get('models', [])
                 
-                if model_id == model_requested:
-                    node_with_model = node_id
-                    model_price = found_price
+                for model in node_models:
+                    model_id = None
+                    found_price = None
+                    
+                    if isinstance(model, dict):
+                        model_id = model.get('id') or model.get('name')
+                        found_price = model.get('price_per_minute')
+                    else:
+                        model_id = str(model)
+                    
+                    if model_id == model_requested:
+                        node_with_model = node_id
+                        model_price = found_price
+                        break
+                
+                if node_with_model:
                     break
-            
-            if node_with_model:
-                break
         
         if not node_with_model:
             logger.warning(f"No node with model {model_requested}")
@@ -510,6 +562,7 @@ def new_session():
             return jsonify({'error': 'Lightning Network unavailable. Please try again later.'}), 503
 
         # Crea sessione nel DB (pending payment)
+        # Salva il nodo target per l'assegnazione dopo il pagamento
         session = Session(
             user_id=user_id,
             node_id='pending',
@@ -518,10 +571,22 @@ def new_session():
             expires_at=datetime.utcnow() + timedelta(minutes=minutes),
             context_length=context_length
         )
+        
+        # Memorizza il nodo target nel pending_sessions per l'assegnazione
+        # dopo il pagamento
+        pending_sessions[invoice['r_hash']] = {
+            'session_id': None,  # Sarà aggiornato dopo commit
+            'target_node_id': node_with_model,
+            'hf_repo': hf_repo
+        }
+        
         db.session.add(session)
         db.session.commit()
         
-        logger.info(f"Session {session.id} created, invoice amount: {amount} sats")
+        # Aggiorna pending_sessions con session_id
+        pending_sessions[invoice['r_hash']]['session_id'] = session.id
+        
+        logger.info(f"Session {session.id} created, invoice amount: {amount} sats, target_node: {node_with_model}")
 
         return jsonify({
             'invoice': invoice['payment_request'],
@@ -646,8 +711,32 @@ def start_session(data):
         emit('error', {'message': 'Session expired'})
         return
 
-    # Prima cerca un nodo WebSocket disponibile (dietro NAT)
-    ws_node_id, ws_sid = get_websocket_node(session.model)
+    # Controlla se c'è un nodo target specifico in pending_sessions
+    target_node_id = None
+    hf_repo = None
+    if session.payment_hash in pending_sessions:
+        pending_info = pending_sessions[session.payment_hash]
+        target_node_id = pending_info.get('target_node_id')
+        hf_repo = pending_info.get('hf_repo')
+        # Rimuovi da pending_sessions
+        del pending_sessions[session.payment_hash]
+    
+    # Se c'è un target node specifico, usa quello
+    ws_node_id = None
+    ws_sid = None
+    
+    if target_node_id and target_node_id in connected_nodes:
+        # Verifica che il nodo target sia ancora disponibile (non occupato)
+        busy_nodes = get_busy_node_ids()
+        if target_node_id not in busy_nodes:
+            ws_node_id = target_node_id
+            ws_sid = connected_nodes[target_node_id]['sid']
+        else:
+            emit('error', {'message': 'Selected node is currently busy'})
+            return
+    else:
+        # Fallback: cerca un nodo WebSocket disponibile (dietro NAT)
+        ws_node_id, ws_sid = get_websocket_node(session.model)
     
     if ws_node_id:
         # Usa nodo WebSocket
@@ -672,13 +761,20 @@ def start_session(data):
                 context = session.context_length
             
             # Invia richiesta al nodo
-            socketio.emit('start_session', {
+            start_data = {
                 'session_id': session.id,
                 'model': session.model,
                 'model_id': session.model,  # Per il nuovo sistema
                 'model_name': session.model,
                 'context': context
-            }, room=f"node_{ws_node_id}")
+            }
+            
+            # Se è un modello HuggingFace custom, aggiungi il repo
+            if hf_repo:
+                start_data['hf_repo'] = hf_repo
+                logger.info(f"Session {session.id} will download HF model: {hf_repo}")
+            
+            socketio.emit('start_session', start_data, room=f"node_{ws_node_id}")
             
             join_room(str(session.id))
             emit('session_started', {
@@ -1084,6 +1180,7 @@ def update_node_stats_internal(node_id, **kwargs):
 # node_id -> {'sid': socket_id, 'models': [...], 'hardware': {...}, 'name': str}
 connected_nodes = {}  
 pending_requests = {}  # request_id -> {'session_id': ..., 'user_sid': ...}
+pending_sessions = {}  # payment_hash -> {'session_id': ..., 'target_node_id': ..., 'hf_repo': ...}
 
 
 @socketio.on('node_register')

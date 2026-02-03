@@ -63,12 +63,33 @@
                 </div>
             </div>
 
-            <!-- Models Section -->
-            <div id="models-section">
-                <h3>🧠 Available Models</h3>
-                <div id="models-loading" class="loading-spinner">Loading models from network...</div>
+            <!-- Nodes Section (prima pagina) -->
+            <div id="nodes-section">
+                <h3>🖥️ Available Nodes</h3>
+                <p class="section-subtitle">Select a node to see available models and start a session</p>
+                <div id="nodes-loading" class="loading-spinner">Loading nodes from network...</div>
+                <div id="nodes-grid"></div>
+                <button onclick="refreshNodes()" class="btn-refresh">🔄 Refresh</button>
+            </div>
+
+            <!-- Models Section (dopo selezione nodo) -->
+            <div id="models-section" style="display: none;">
+                <button onclick="backToNodes()" class="btn-back">← Back to Nodes</button>
+                <h3>🧠 Models on <span id="selected-node-name">Node</span></h3>
+                
+                <!-- HuggingFace Custom Model -->
+                <div class="hf-custom-section">
+                    <h4>📥 Load Custom Model from HuggingFace</h4>
+                    <div class="hf-input-row">
+                        <input type="text" id="hf-repo-input" placeholder="e.g. bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M">
+                        <button onclick="loadHuggingFaceModel()" class="btn-secondary">Load Model</button>
+                    </div>
+                    <p class="hf-hint">Format: owner/repo:quantization (e.g. unsloth/Llama-3.2-3B-Instruct-GGUF:Q4_K_M)</p>
+                </div>
+                
+                <h4>📦 Pre-loaded Models</h4>
+                <div id="models-loading" class="loading-spinner" style="display: none;">Loading models...</div>
                 <div id="models-grid"></div>
-                <button onclick="refreshModels()" class="btn-refresh">🔄 Refresh</button>
             </div>
 
             <!-- Session Config -->

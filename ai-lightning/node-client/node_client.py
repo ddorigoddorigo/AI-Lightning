@@ -717,15 +717,24 @@ class NodeClient:
             model_id = data.get('model_id') or data.get('model')
             model_name = data.get('model_name', model_id)
             context = data.get('context', 2048)
+            hf_repo_direct = data.get('hf_repo')  # HuggingFace repo passato direttamente per download on-demand
             
             logger.info(f"Starting session {session_id} with model {model_name} (id: {model_id})")
+            if hf_repo_direct:
+                logger.info(f"HuggingFace repo provided directly for on-demand download: {hf_repo_direct}")
             
             # Cerca il modello - supporta sia HuggingFace che locale
             model_source = None
             use_hf = False
             
+            # Se è stato passato un hf_repo direttamente, usalo per download on-demand
+            if hf_repo_direct:
+                model_source = hf_repo_direct
+                use_hf = True
+                logger.info(f"Using direct HuggingFace repo for on-demand download: {model_source}")
+            
             # Cerca nei modelli config (legacy) - supporta hf_repo
-            if model_name in self.models_config:
+            elif model_name in self.models_config:
                 cfg = self.models_config[model_name]
                 if cfg.get('hf_repo'):
                     model_source = cfg['hf_repo']

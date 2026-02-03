@@ -10,11 +10,12 @@
 let socket = null;
 let authToken = localStorage.getItem('authToken');
 let currentSession = localStorage.getItem('sessionId');
+let selectedNode = null;  // Nodo selezionato
 let selectedModel = null;
 let availableModels = [];
 let onlineNodes = [];
 let isWaitingForResponse = false;
-let modelsRefreshInterval = null;
+let nodesRefreshInterval = null;
 
 // Session configuration
 let sessionContextLength = 4096;
@@ -242,13 +243,18 @@ function logout() {
 function showMain() {
     document.getElementById('auth-section').style.display = 'none';
     document.getElementById('main-section').style.display = 'block';
-    document.getElementById('models-section').style.display = 'block';
+    document.getElementById('nodes-section').style.display = 'block';
+    document.getElementById('models-section').style.display = 'none';
     document.getElementById('session-config').style.display = 'none';
     document.getElementById('invoice-section').style.display = 'none';
     document.getElementById('chat-section').style.display = 'none';
     
     // Carica info utente incluso balance
     loadUserProfile();
+    
+    // Carica nodi
+    loadNodes();
+    startNodesRefresh();
 }
 
 // ===========================================
@@ -356,9 +362,273 @@ async function addTestBalance() {
 }
 
 // ===========================================
-// Models
+// Nodes
+// ===========================================
+async function loadNodes() {
+    const grid = document.getElementById('nodes-grid');
+    const loading = document.getElementById('nodes-loading');
+    
+    if (loading) loading.style.display = 'block';
+    if (grid) grid.innerHTML = '';
+    
+    try {
+        const response = await fetch('/api/nodes/online');
+        const data = await response.json();
+        
+        onlineNodes = data.nodes || [];
+        
+        if (loading) loading.style.display = 'none';
+        
+        if (onlineNodes.length === 0) {
+            if (grid) grid.innerHTML = '<div class="no-models">No nodes online. Waiting for nodes to connect...</div>';
+            return;
+        }
+        
+        renderNodesGrid(onlineNodes);
+        
+    } catch (error) {
+        if (loading) loading.style.display = 'none';
+        if (grid) grid.innerHTML = '<div class="error">Failed to load nodes. <a href="#" onclick="loadNodes()">Retry</a></div>';
+    }
+}
+
+function renderNodesGrid(nodes) {
+    const grid = document.getElementById('nodes-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    
+    nodes.forEach(node => {
+        const card = document.createElement('div');
+        const isBusy = node.status === 'busy';
+        card.className = `node-card ${isBusy ? 'node-busy' : ''}`;
+        
+        if (!isBusy) {
+            card.onclick = () => selectNode(node);
+        }
+        
+        // Hardware info
+        const hw = node.hardware || {};
+        const vramGb = (hw.total_vram_mb / 1024).toFixed(1);
+        const ramStr = hw.ram_type && hw.ram_speed_mhz 
+            ? `${hw.ram_gb} GB ${hw.ram_type}-${hw.ram_speed_mhz}`
+            : `${hw.ram_gb} GB`;
+        
+        // Disk info
+        const diskFree = hw.disk_free_gb || 0;
+        const diskTotal = hw.disk_total_gb || 0;
+        const diskPercent = hw.disk_percent_used || 0;
+        let diskClass = '';
+        if (diskPercent > 90) diskClass = 'danger';
+        else if (diskPercent > 75) diskClass = 'warning';
+        
+        // GPU name (prima GPU)
+        const gpuName = hw.gpus && hw.gpus.length > 0 ? hw.gpus[0].name : 'CPU Only';
+        
+        // Timer per nodi occupati
+        let busyHtml = '';
+        if (isBusy && node.busy_info) {
+            const timeRemaining = node.busy_info.seconds_remaining || 0;
+            busyHtml = `
+                <div class="node-busy-timer">
+                    ⏳ In use - Available in: <span class="busy-countdown" data-seconds="${timeRemaining}">${formatTimeRemaining(timeRemaining)}</span>
+                </div>
+            `;
+        }
+        
+        card.innerHTML = `
+            <div class="node-header">
+                <span class="node-name">🖥️ ${node.name || node.node_id.substring(0, 8)}</span>
+                <span class="node-status ${node.status}">${node.status}</span>
+            </div>
+            
+            <div class="node-specs">
+                <div class="node-spec"><span class="node-spec-icon">🎮</span> ${gpuName}</div>
+                <div class="node-spec"><span class="node-spec-icon">⚡</span> ${vramGb} GB VRAM</div>
+                <div class="node-spec"><span class="node-spec-icon">💾</span> ${ramStr}</div>
+                <div class="node-spec"><span class="node-spec-icon">🧠</span> ${hw.cpu_cores || '?'} cores</div>
+            </div>
+            
+            <div class="node-disk-bar">
+                <div class="node-disk-fill ${diskClass}" style="width: ${diskPercent}%"></div>
+            </div>
+            <div class="node-disk-info">
+                <span>💿 ${diskFree.toFixed(1)} GB free</span>
+                <span>${diskTotal.toFixed(1)} GB total</span>
+            </div>
+            
+            <div class="node-models-count">📦 ${node.models_count} models available</div>
+            ${busyHtml}
+        `;
+        
+        grid.appendChild(card);
+    });
+    
+    // Avvia countdown per nodi busy
+    startBusyNodeTimers();
+}
+
+function startBusyNodeTimers() {
+    const timers = document.querySelectorAll('.busy-countdown');
+    if (timers.length === 0) return;
+    
+    const updateTimers = () => {
+        let anyActive = false;
+        timers.forEach(timer => {
+            let seconds = parseInt(timer.dataset.seconds) || 0;
+            if (seconds > 0) {
+                seconds--;
+                timer.dataset.seconds = seconds;
+                timer.textContent = formatTimeRemaining(seconds);
+                anyActive = true;
+            } else {
+                timer.textContent = 'Available now!';
+            }
+        });
+        
+        if (anyActive) {
+            setTimeout(updateTimers, 1000);
+        } else {
+            // Ricarica nodi quando tutti i timer sono finiti
+            loadNodes();
+        }
+    };
+    
+    setTimeout(updateTimers, 1000);
+}
+
+function selectNode(node) {
+    selectedNode = node;
+    
+    // Mostra sezione modelli
+    document.getElementById('nodes-section').style.display = 'none';
+    document.getElementById('models-section').style.display = 'block';
+    document.getElementById('selected-node-name').textContent = node.name || node.node_id.substring(0, 8);
+    
+    // Render modelli del nodo selezionato
+    renderNodeModels(node.models || []);
+}
+
+function backToNodes() {
+    selectedNode = null;
+    selectedModel = null;
+    
+    document.getElementById('models-section').style.display = 'none';
+    document.getElementById('session-config').style.display = 'none';
+    document.getElementById('nodes-section').style.display = 'block';
+    
+    // Ricarica nodi
+    loadNodes();
+}
+
+function renderNodeModels(models) {
+    const grid = document.getElementById('models-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    
+    if (models.length === 0) {
+        grid.innerHTML = '<div class="no-models">No pre-loaded models. Use the HuggingFace input above to load a model.</div>';
+        return;
+    }
+    
+    const icons = {
+        'llama': '🦙',
+        'mistral': '🌪️',
+        'phi': 'φ',
+        'qwen': '🐼',
+        'deepseek': '🔍',
+        'gemma': '💎',
+        'codellama': '💻',
+        'default': '🧠'
+    };
+    
+    models.forEach(model => {
+        const card = document.createElement('div');
+        card.className = 'model-card';
+        card.onclick = () => selectModel(model);
+        
+        const icon = icons[model.architecture] || icons.default;
+        
+        card.innerHTML = `
+            <div class="model-icon">${icon}</div>
+            <div class="model-name">${model.name}</div>
+            <div class="model-info">
+                <span class="param">${model.parameters || 'Unknown'}</span>
+                <span class="quant">${model.quantization || 'Unknown'}</span>
+            </div>
+            <div class="model-specs">
+                <span>Context: ${(model.context_length || 4096).toLocaleString()}</span>
+                <span>VRAM: ${model.min_vram_mb ? (model.min_vram_mb/1024).toFixed(1) + 'GB' : '?'}</span>
+            </div>
+        `;
+        
+        grid.appendChild(card);
+    });
+}
+
+function loadHuggingFaceModel() {
+    const input = document.getElementById('hf-repo-input');
+    const hfRepo = input.value.trim();
+    
+    if (!hfRepo) {
+        showError('Please enter a HuggingFace repository');
+        return;
+    }
+    
+    // Valida formato: owner/repo o owner/repo:quant
+    if (!hfRepo.includes('/')) {
+        showError('Invalid format. Use: owner/repo:quantization');
+        return;
+    }
+    
+    // Crea un modello custom da HuggingFace
+    const model = {
+        id: 'hf_' + btoa(hfRepo).substring(0, 16),
+        name: hfRepo.split('/').pop().split(':')[0],
+        hf_repo: hfRepo,
+        is_huggingface: true,
+        parameters: 'Custom',
+        quantization: hfRepo.includes(':') ? hfRepo.split(':')[1] : 'default',
+        context_length: 4096,
+        architecture: 'unknown'
+    };
+    
+    // Seleziona questo modello
+    selectModel(model);
+    showSuccess(`Loading model: ${hfRepo}`);
+}
+
+function refreshNodes() {
+    loadNodes();
+}
+
+function startNodesRefresh() {
+    // Refresh ogni 30 secondi
+    if (nodesRefreshInterval) {
+        clearInterval(nodesRefreshInterval);
+    }
+    nodesRefreshInterval = setInterval(loadNodes, 30000);
+}
+
+function stopNodesRefresh() {
+    if (nodesRefreshInterval) {
+        clearInterval(nodesRefreshInterval);
+        nodesRefreshInterval = null;
+    }
+}
+
+// ===========================================
+// Models (legacy - kept for compatibility)
 // ===========================================
 async function loadModels() {
+    // Se c'è un nodo selezionato, mostra i suoi modelli
+    if (selectedNode) {
+        renderNodeModels(selectedNode.models || []);
+        return;
+    }
+    
+    // Altrimenti carica nodi
+    loadNodes();
+}
     const grid = document.getElementById('models-grid');
     const loading = document.getElementById('models-loading');
     
@@ -547,7 +817,13 @@ function selectModel(model) {
     
     document.getElementById('models-section').style.display = 'none';
     document.getElementById('session-config').style.display = 'block';
-    document.getElementById('selected-model-name').textContent = model.name;
+    
+    // Mostra nome modello e nodo
+    let modelDisplay = model.name;
+    if (model.hf_repo) {
+        modelDisplay += ` (${model.hf_repo})`;
+    }
+    document.getElementById('selected-model-name').textContent = modelDisplay;
     
     // Reset parametri LLM ai valori di default
     resetLLMParams();
@@ -585,6 +861,7 @@ function setupContextSlider() {
 function cancelModelSelection() {
     selectedModel = null;
     document.getElementById('session-config').style.display = 'none';
+    // Torna alla selezione modelli del nodo (non ai nodi)
     document.getElementById('models-section').style.display = 'block';
 }
 
@@ -783,6 +1060,11 @@ async function createSession() {
         return;
     }
     
+    if (!selectedNode) {
+        showError('Please select a node first');
+        return;
+    }
+    
     const minutes = parseInt(document.getElementById('minutes').value);
     if (minutes < 1 || minutes > 120) {
         showError('Duration must be between 1 and 120 minutes');
@@ -790,6 +1072,14 @@ async function createSession() {
     }
 
     try {
+        // Determina cosa inviare come modello
+        let modelToSend = selectedModel.id || selectedModel.name;
+        
+        // Se è un modello HuggingFace custom, usa l'hf_repo
+        if (selectedModel.hf_repo) {
+            modelToSend = selectedModel.hf_repo;
+        }
+        
         const response = await fetch('/api/new_session', {
             method: 'POST',
             headers: {
@@ -797,9 +1087,11 @@ async function createSession() {
                 'Authorization': `Bearer ${authToken}`
             },
             body: JSON.stringify({
-                model: selectedModel.id || selectedModel.name,
+                model: modelToSend,
+                node_id: selectedNode.node_id,  // Specifica il nodo
                 minutes: minutes,
-                context_length: sessionContextLength
+                context_length: sessionContextLength,
+                hf_repo: selectedModel.hf_repo || null  // Se HuggingFace custom
             })
         });
 
