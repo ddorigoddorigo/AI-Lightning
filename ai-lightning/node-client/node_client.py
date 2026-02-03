@@ -196,6 +196,13 @@ class LlamaProcess:
         self.is_downloading = True
         last_log_time = time.time()
         
+        # Invia subito stato iniziale di loading
+        if download_callback:
+            if self.use_hf:
+                download_callback('loading', 'Starting model loading...')
+            else:
+                download_callback('loading', 'Loading model into memory...')
+        
         for i in range(600):  # 10 minuti timeout
             # Controlla se il processo è ancora vivo
             if self.process.poll() is not None:
@@ -206,9 +213,9 @@ class LlamaProcess:
             
             # Prova a leggere l'output (non bloccante)
             try:
-                import select
                 if sys.platform != 'win32':
                     # Unix: usa select
+                    import select
                     readable, _, _ = select.select([self.process.stdout], [], [], 0.1)
                     if readable:
                         line = self.process.stdout.readline()
@@ -220,6 +227,38 @@ class LlamaProcess:
                                     download_callback('downloading', line)
                                 elif 'loading' in line.lower():
                                     download_callback('loading', line)
+                else:
+                    # Windows: prova lettura con timeout ridotto usando thread
+                    import threading
+                    import queue
+                    
+                    # Usa una coda thread-safe per leggere l'output
+                    if not hasattr(self, '_output_queue'):
+                        self._output_queue = queue.Queue()
+                        def read_output():
+                            while self.process and self.process.poll() is None:
+                                try:
+                                    line = self.process.stdout.readline()
+                                    if line:
+                                        self._output_queue.put(line.strip())
+                                except:
+                                    break
+                        self._reader_thread = threading.Thread(target=read_output, daemon=True)
+                        self._reader_thread.start()
+                    
+                    # Leggi dalla coda senza bloccare
+                    try:
+                        while True:
+                            line = self._output_queue.get_nowait()
+                            if line:
+                                logger.info(f"[llama-server] {line}")
+                                if download_callback:
+                                    if 'download' in line.lower() or '%' in line:
+                                        download_callback('downloading', line)
+                                    elif 'loading' in line.lower():
+                                        download_callback('loading', line)
+                    except queue.Empty:
+                        pass
             except:
                 pass
             
