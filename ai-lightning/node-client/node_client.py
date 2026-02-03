@@ -275,14 +275,21 @@ class LlamaProcess:
         return self.process and self.process.poll() is None
     
     def generate(self, prompt, max_tokens=2048, temperature=0.7, top_k=40, top_p=0.95, 
-                 repeat_penalty=1.1, presence_penalty=0.0, frequency_penalty=0.0, 
-                 seed=-1, stop=None):
+                 repeat_penalty=1.0, presence_penalty=0.0, frequency_penalty=0.0, 
+                 seed=-1, stop=None,
+                 # Extended parameters
+                 min_p=0.05, typical_p=1.0, 
+                 dynatemp_range=0.0, dynatemp_exponent=1.0,
+                 repeat_last_n=64,
+                 xtc_threshold=0.1, xtc_probability=0.5,
+                 dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=-1,
+                 samplers=None):
         """
         Genera una risposta (non-streaming, per compatibilità).
         
         Args:
             prompt: Il prompt da processare
-            max_tokens: Numero massimo di token da generare
+            max_tokens: Numero massimo di token da generare (-1 = context length)
             temperature: Controlla la casualità (0=deterministico, 1+=più creativo)
             top_k: Considera solo i top k token più probabili (0=disabilitato)
             top_p: Nucleus sampling - considera token fino a probabilità cumulativa p
@@ -291,26 +298,65 @@ class LlamaProcess:
             frequency_penalty: Penalizza token in base alla frequenza (-2.0 a 2.0)
             seed: Seed per riproducibilità (-1=random)
             stop: Lista di stringhe di stop
+            min_p: Minimum probability threshold
+            typical_p: Typical sampling (1.0=disabled)
+            dynatemp_range: Dynamic temperature range (0=disabled)
+            dynatemp_exponent: Dynamic temperature exponent
+            repeat_last_n: Tokens to consider for repeat penalty
+            xtc_threshold: XTC threshold
+            xtc_probability: XTC probability
+            dry_multiplier: DRY multiplier (0=disabled)
+            dry_base: DRY base
+            dry_allowed_length: DRY allowed length
+            dry_penalty_last_n: DRY penalty last n (-1=context)
+            samplers: Sampler order string (semicolon separated)
         """
         if not self.is_running():
             return None, "Process not running"
         
         try:
+            # Build request payload
+            payload = {
+                'prompt': prompt,
+                'n_predict': max_tokens if max_tokens > 0 else -1,
+                'temperature': temperature,
+                'top_k': top_k,
+                'top_p': top_p,
+                'min_p': min_p,
+                'typical_p': typical_p,
+                'repeat_penalty': repeat_penalty,
+                'repeat_last_n': repeat_last_n,
+                'presence_penalty': presence_penalty,
+                'frequency_penalty': frequency_penalty,
+                'seed': seed,
+                'stop': stop or [],
+                'stream': False
+            }
+            
+            # Add dynamic temperature if enabled
+            if dynatemp_range > 0:
+                payload['dynatemp_range'] = dynatemp_range
+                payload['dynatemp_exponent'] = dynatemp_exponent
+            
+            # Add XTC if threshold > 0
+            if xtc_threshold > 0:
+                payload['xtc_threshold'] = xtc_threshold
+                payload['xtc_probability'] = xtc_probability
+            
+            # Add DRY if multiplier > 0
+            if dry_multiplier > 0:
+                payload['dry_multiplier'] = dry_multiplier
+                payload['dry_base'] = dry_base
+                payload['dry_allowed_length'] = dry_allowed_length
+                payload['dry_penalty_last_n'] = dry_penalty_last_n
+            
+            # Add samplers order if specified
+            if samplers:
+                payload['samplers'] = samplers.split(';') if isinstance(samplers, str) else samplers
+            
             response = httpx.post(
                 f"http://127.0.0.1:{self.port}/completion",
-                json={
-                    'prompt': prompt,
-                    'n_predict': max_tokens,
-                    'temperature': temperature,
-                    'top_k': top_k,
-                    'top_p': top_p,
-                    'repeat_penalty': repeat_penalty,
-                    'presence_penalty': presence_penalty,
-                    'frequency_penalty': frequency_penalty,
-                    'seed': seed,
-                    'stop': stop or [],
-                    'stream': False
-                },
+                json=payload,
                 timeout=180
             )
             
@@ -326,8 +372,15 @@ class LlamaProcess:
             return None, str(e)
     
     def generate_stream(self, prompt, max_tokens=2048, temperature=0.7, top_k=40, top_p=0.95,
-                        repeat_penalty=1.1, presence_penalty=0.0, frequency_penalty=0.0,
-                        seed=-1, stop=None, token_callback=None):
+                        repeat_penalty=1.0, presence_penalty=0.0, frequency_penalty=0.0,
+                        seed=-1, stop=None, token_callback=None,
+                        # Extended parameters
+                        min_p=0.05, typical_p=1.0, 
+                        dynatemp_range=0.0, dynatemp_exponent=1.0,
+                        repeat_last_n=64,
+                        xtc_threshold=0.1, xtc_probability=0.5,
+                        dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=-1,
+                        samplers=None):
         """
         Genera una risposta in streaming, token per token.
         
@@ -343,6 +396,18 @@ class LlamaProcess:
             seed: Seed per riproducibilità (-1=random)
             stop: Lista di stringhe di stop
             token_callback: Funzione chiamata per ogni token generato (token, is_final)
+            min_p: Minimum probability threshold
+            typical_p: Typical sampling (1.0=disabled)
+            dynatemp_range: Dynamic temperature range (0=disabled)
+            dynatemp_exponent: Dynamic temperature exponent
+            repeat_last_n: Tokens to consider for repeat penalty
+            xtc_threshold: XTC threshold
+            xtc_probability: XTC probability
+            dry_multiplier: DRY multiplier (0=disabled)
+            dry_base: DRY base
+            dry_allowed_length: DRY allowed length
+            dry_penalty_last_n: DRY penalty last n (-1=context)
+            samplers: Sampler order string (semicolon separated)
         
         Returns:
             (full_response, error) - La risposta completa e eventuale errore
@@ -359,22 +424,49 @@ class LlamaProcess:
         try:
             logger.debug(f"Starting stream request to llama-server on port {self.port}")
             
+            # Build request payload
+            payload = {
+                'prompt': prompt,
+                'n_predict': max_tokens if max_tokens > 0 else -1,
+                'temperature': temperature,
+                'top_k': top_k,
+                'top_p': top_p,
+                'min_p': min_p,
+                'typical_p': typical_p,
+                'repeat_penalty': repeat_penalty,
+                'repeat_last_n': repeat_last_n,
+                'presence_penalty': presence_penalty,
+                'frequency_penalty': frequency_penalty,
+                'seed': seed,
+                'stop': stop or [],
+                'stream': True
+            }
+            
+            # Add dynamic temperature if enabled
+            if dynatemp_range > 0:
+                payload['dynatemp_range'] = dynatemp_range
+                payload['dynatemp_exponent'] = dynatemp_exponent
+            
+            # Add XTC if threshold > 0
+            if xtc_threshold > 0:
+                payload['xtc_threshold'] = xtc_threshold
+                payload['xtc_probability'] = xtc_probability
+            
+            # Add DRY if multiplier > 0
+            if dry_multiplier > 0:
+                payload['dry_multiplier'] = dry_multiplier
+                payload['dry_base'] = dry_base
+                payload['dry_allowed_length'] = dry_allowed_length
+                payload['dry_penalty_last_n'] = dry_penalty_last_n
+            
+            # Add samplers order if specified
+            if samplers:
+                payload['samplers'] = samplers.split(';') if isinstance(samplers, str) else samplers
+            
             with httpx.stream(
                 'POST',
                 f"http://127.0.0.1:{self.port}/completion",
-                json={
-                    'prompt': prompt,
-                    'n_predict': max_tokens,
-                    'temperature': temperature,
-                    'top_k': top_k,
-                    'top_p': top_p,
-                    'repeat_penalty': repeat_penalty,
-                    'presence_penalty': presence_penalty,
-                    'frequency_penalty': frequency_penalty,
-                    'seed': seed,
-                    'stop': stop or [],
-                    'stream': True
-                },
+                json=payload,
                 timeout=300  # 5 minuti per streaming
             ) as response:
                 if response.status_code != 200:
@@ -723,19 +815,41 @@ class NodeClient:
             session_id = str(data['session_id'])
             prompt = data['prompt']
             
-            # Parametri di generazione (con default sensati)
-            max_tokens = data.get('max_tokens', 2048)
+            # Basic parameters
+            max_tokens = data.get('max_tokens', -1)  # -1 = use model context
             temperature = data.get('temperature', 0.7)
             top_k = data.get('top_k', 40)
             top_p = data.get('top_p', 0.95)
-            repeat_penalty = data.get('repeat_penalty', 1.1)
-            presence_penalty = data.get('presence_penalty', 0.0)
-            frequency_penalty = data.get('frequency_penalty', 0.0)
             seed = data.get('seed', -1)
             stop = data.get('stop', [])
-            use_streaming = data.get('stream', True)  # Default: streaming abilitato
+            use_streaming = data.get('stream', True)
             
-            logger.info(f"Inference request for session {session_id}: temp={temperature}, top_k={top_k}, top_p={top_p}")
+            # Extended sampling parameters
+            min_p = data.get('min_p', 0.05)
+            typical_p = data.get('typical_p', 1.0)
+            dynatemp_range = data.get('dynatemp_range', 0.0)
+            dynatemp_exponent = data.get('dynatemp_exponent', 1.0)
+            
+            # Penalties
+            repeat_last_n = data.get('repeat_last_n', 64)
+            repeat_penalty = data.get('repeat_penalty', 1.0)
+            presence_penalty = data.get('presence_penalty', 0.0)
+            frequency_penalty = data.get('frequency_penalty', 0.0)
+            
+            # DRY parameters
+            dry_multiplier = data.get('dry_multiplier', 0.0)
+            dry_base = data.get('dry_base', 1.75)
+            dry_allowed_length = data.get('dry_allowed_length', 2)
+            dry_penalty_last_n = data.get('dry_penalty_last_n', -1)
+            
+            # XTC parameters
+            xtc_threshold = data.get('xtc_threshold', 0.1)
+            xtc_probability = data.get('xtc_probability', 0.5)
+            
+            # Sampler order
+            samplers = data.get('samplers', None)
+            
+            logger.info(f"Inference request for session {session_id}: temp={temperature}, top_k={top_k}, top_p={top_p}, min_p={min_p}")
             
             if session_id not in self.active_sessions:
                 self.sio.emit('inference_error', {
@@ -794,12 +908,24 @@ class NodeClient:
                         temperature=temperature,
                         top_k=top_k,
                         top_p=top_p,
+                        min_p=min_p,
+                        typical_p=typical_p,
+                        dynatemp_range=dynatemp_range,
+                        dynatemp_exponent=dynatemp_exponent,
+                        repeat_last_n=repeat_last_n,
                         repeat_penalty=repeat_penalty,
                         presence_penalty=presence_penalty,
                         frequency_penalty=frequency_penalty,
                         seed=seed,
-                        stop=stop, 
-                        token_callback=token_callback
+                        stop=stop,
+                        token_callback=token_callback,
+                        xtc_threshold=xtc_threshold,
+                        xtc_probability=xtc_probability,
+                        dry_multiplier=dry_multiplier,
+                        dry_base=dry_base,
+                        dry_allowed_length=dry_allowed_length,
+                        dry_penalty_last_n=dry_penalty_last_n,
+                        samplers=samplers
                     )
                     logger.info(f"Streaming complete for session {session_id}: {token_count} tokens")
                     

@@ -70,6 +70,7 @@
                 <div class="config-row">
                     <label>Selected Model:</label>
                     <span id="selected-model-name">-</span>
+                    <button onclick="openLLMSettings()" class="btn-icon" title="LLM Settings">⚙️</button>
                 </div>
                 <div class="config-row">
                     <label for="minutes">Duration (minutes):</label>
@@ -80,55 +81,161 @@
                     <span id="estimated-cost">-</span>
                 </div>
                 
-                <!-- Advanced LLM Parameters -->
-                <details class="advanced-params">
-                    <summary>🎛️ Advanced Parameters</summary>
-                    <div class="params-grid">
-                        <div class="param-group">
-                            <label for="param-temperature">Temperature</label>
-                            <input type="range" id="param-temperature" min="0" max="2" step="0.1" value="0.7">
-                            <span class="param-value" id="temp-value">0.7</span>
-                            <small>Higher = more creative, Lower = more focused</small>
-                        </div>
-                        
-                        <div class="param-group">
-                            <label for="param-top-p">Top P (Nucleus Sampling)</label>
-                            <input type="range" id="param-top-p" min="0" max="1" step="0.05" value="0.95">
-                            <span class="param-value" id="topp-value">0.95</span>
-                            <small>Consider tokens covering this probability mass</small>
-                        </div>
-                        
-                        <div class="param-group">
-                            <label for="param-top-k">Top K</label>
-                            <input type="range" id="param-top-k" min="0" max="100" step="1" value="40">
-                            <span class="param-value" id="topk-value">40</span>
-                            <small>Consider only top K tokens (0 = disabled)</small>
-                        </div>
-                        
-                        <div class="param-group">
-                            <label for="param-repeat-penalty">Repeat Penalty</label>
-                            <input type="range" id="param-repeat-penalty" min="1" max="2" step="0.05" value="1.1">
-                            <span class="param-value" id="repeat-value">1.1</span>
-                            <small>Penalize repeated tokens (1.0 = no penalty)</small>
-                        </div>
-                        
-                        <div class="param-group">
-                            <label for="param-max-tokens">Max Tokens</label>
-                            <input type="number" id="param-max-tokens" min="64" max="8192" value="2048">
-                            <small>Maximum tokens to generate per response</small>
-                        </div>
-                        
-                        <div class="param-group">
-                            <label for="param-seed">Seed</label>
-                            <input type="number" id="param-seed" value="-1" min="-1">
-                            <small>-1 = random, or set for reproducibility</small>
-                        </div>
-                    </div>
-                    <button onclick="resetLLMParams()" class="btn-small">↺ Reset to Defaults</button>
-                </details>
-                
                 <button onclick="createSession()" class="btn-primary">⚡ Buy Session</button>
                 <button onclick="cancelModelSelection()" class="btn-secondary">Cancel</button>
+            </div>
+
+            <!-- LLM Settings Modal -->
+            <div id="llm-settings-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>🎛️ LLM Generation Settings</h3>
+                        <button onclick="closeLLMSettings()" class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Sampling Parameters -->
+                        <div class="settings-section">
+                            <h4>🎲 Sampling</h4>
+                            <div class="params-grid">
+                                <div class="param-group">
+                                    <label>Temperature</label>
+                                    <input type="range" id="param-temperature" min="0" max="2" step="0.05" value="0.7">
+                                    <span class="param-value" id="temp-value">0.7</span>
+                                    <small>Randomness (0 = deterministic)</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>Dynamic Temp Range</label>
+                                    <input type="range" id="param-dynatemp-range" min="0" max="2" step="0.1" value="0">
+                                    <span class="param-value" id="dynatemp-range-value">0</span>
+                                    <small>0 = disabled</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>Dynamic Temp Exponent</label>
+                                    <input type="range" id="param-dynatemp-exp" min="0.1" max="3" step="0.1" value="1">
+                                    <span class="param-value" id="dynatemp-exp-value">1</span>
+                                </div>
+                                <div class="param-group">
+                                    <label>Top K</label>
+                                    <input type="range" id="param-top-k" min="0" max="100" step="1" value="40">
+                                    <span class="param-value" id="topk-value">40</span>
+                                    <small>0 = disabled</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>Top P (Nucleus)</label>
+                                    <input type="range" id="param-top-p" min="0" max="1" step="0.01" value="0.95">
+                                    <span class="param-value" id="topp-value">0.95</span>
+                                </div>
+                                <div class="param-group">
+                                    <label>Min P</label>
+                                    <input type="range" id="param-min-p" min="0" max="1" step="0.01" value="0.05">
+                                    <span class="param-value" id="minp-value">0.05</span>
+                                </div>
+                                <div class="param-group">
+                                    <label>Typical P</label>
+                                    <input type="range" id="param-typical-p" min="0" max="1" step="0.01" value="1">
+                                    <span class="param-value" id="typicalp-value">1</span>
+                                    <small>1 = disabled</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>XTC Threshold</label>
+                                    <input type="range" id="param-xtc-threshold" min="0" max="1" step="0.01" value="0.1">
+                                    <span class="param-value" id="xtc-threshold-value">0.1</span>
+                                </div>
+                                <div class="param-group">
+                                    <label>XTC Probability</label>
+                                    <input type="range" id="param-xtc-prob" min="0" max="1" step="0.01" value="0.5">
+                                    <span class="param-value" id="xtc-prob-value">0.5</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Penalties -->
+                        <div class="settings-section">
+                            <h4>⚖️ Penalties</h4>
+                            <div class="params-grid">
+                                <div class="param-group">
+                                    <label>Repeat Last N</label>
+                                    <input type="number" id="param-repeat-last-n" min="0" max="2048" value="64">
+                                    <small>Tokens to consider for repeat penalty</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>Repeat Penalty</label>
+                                    <input type="range" id="param-repeat-penalty" min="1" max="2" step="0.01" value="1">
+                                    <span class="param-value" id="repeat-value">1</span>
+                                    <small>1 = no penalty</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>Presence Penalty</label>
+                                    <input type="range" id="param-presence-penalty" min="-2" max="2" step="0.1" value="0">
+                                    <span class="param-value" id="presence-value">0</span>
+                                </div>
+                                <div class="param-group">
+                                    <label>Frequency Penalty</label>
+                                    <input type="range" id="param-frequency-penalty" min="-2" max="2" step="0.1" value="0">
+                                    <span class="param-value" id="frequency-value">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DRY Parameters -->
+                        <div class="settings-section">
+                            <h4>🏜️ DRY (Don't Repeat Yourself)</h4>
+                            <div class="params-grid">
+                                <div class="param-group">
+                                    <label>DRY Multiplier</label>
+                                    <input type="range" id="param-dry-multiplier" min="0" max="2" step="0.1" value="0">
+                                    <span class="param-value" id="dry-mult-value">0</span>
+                                    <small>0 = disabled</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>DRY Base</label>
+                                    <input type="range" id="param-dry-base" min="1" max="3" step="0.05" value="1.75">
+                                    <span class="param-value" id="dry-base-value">1.75</span>
+                                </div>
+                                <div class="param-group">
+                                    <label>DRY Allowed Length</label>
+                                    <input type="number" id="param-dry-allowed-length" min="1" max="10" value="2">
+                                </div>
+                                <div class="param-group">
+                                    <label>DRY Penalty Last N</label>
+                                    <input type="number" id="param-dry-penalty-last-n" min="-1" max="2048" value="-1">
+                                    <small>-1 = context size</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Generation -->
+                        <div class="settings-section">
+                            <h4>📝 Generation</h4>
+                            <div class="params-grid">
+                                <div class="param-group">
+                                    <label>Max Tokens</label>
+                                    <input type="number" id="param-max-tokens" min="-1" max="32768" value="-1">
+                                    <small>-1 = use model's context</small>
+                                </div>
+                                <div class="param-group">
+                                    <label>Seed</label>
+                                    <input type="number" id="param-seed" min="-1" value="-1">
+                                    <small>-1 = random</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Sampler Order -->
+                        <div class="settings-section">
+                            <h4>📋 Sampler Order</h4>
+                            <div class="param-group full-width">
+                                <label>Order of application</label>
+                                <input type="text" id="param-samplers" value="penalties;dry;top_k;typical_p;top_p;min_p;xtc;temperature" class="text-input-wide">
+                                <small>Semicolon-separated list: penalties, dry, top_k, typical_p, top_p, min_p, xtc, temperature</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button onclick="resetLLMParams()" class="btn-secondary">↺ Reset Defaults</button>
+                        <button onclick="closeLLMSettings()" class="btn-primary">✓ Apply</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Invoice Section -->

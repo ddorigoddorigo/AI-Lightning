@@ -737,17 +737,34 @@ def handle_message(data):
         socketio.emit('inference_request', {
             'session_id': session.id,
             'prompt': data['prompt'],
-            # Parametri di generazione
-            'max_tokens': data.get('max_tokens', 2048),
+            # Basic parameters
+            'max_tokens': data.get('max_tokens', -1),
             'temperature': data.get('temperature', 0.7),
             'top_k': data.get('top_k', 40),
             'top_p': data.get('top_p', 0.95),
-            'repeat_penalty': data.get('repeat_penalty', 1.1),
-            'presence_penalty': data.get('presence_penalty', 0.0),
-            'frequency_penalty': data.get('frequency_penalty', 0.0),
             'seed': data.get('seed', -1),
             'stop': data.get('stop', []),
-            'stream': True  # Abilita streaming
+            'stream': True,
+            # Extended sampling parameters
+            'min_p': data.get('min_p', 0.05),
+            'typical_p': data.get('typical_p', 1.0),
+            'dynatemp_range': data.get('dynatemp_range', 0.0),
+            'dynatemp_exponent': data.get('dynatemp_exponent', 1.0),
+            # Penalties
+            'repeat_last_n': data.get('repeat_last_n', 64),
+            'repeat_penalty': data.get('repeat_penalty', 1.0),
+            'presence_penalty': data.get('presence_penalty', 0.0),
+            'frequency_penalty': data.get('frequency_penalty', 0.0),
+            # DRY parameters
+            'dry_multiplier': data.get('dry_multiplier', 0.0),
+            'dry_base': data.get('dry_base', 1.75),
+            'dry_allowed_length': data.get('dry_allowed_length', 2),
+            'dry_penalty_last_n': data.get('dry_penalty_last_n', -1),
+            # XTC parameters
+            'xtc_threshold': data.get('xtc_threshold', 0.1),
+            'xtc_probability': data.get('xtc_probability', 0.5),
+            # Sampler order
+            'samplers': data.get('samplers', None)
         }, room=f"node_{session.node_id}")
         return
 

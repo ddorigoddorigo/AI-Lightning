@@ -18,12 +18,35 @@ let modelsRefreshInterval = null;
 
 // LLM Parameters (with defaults)
 let llmParams = {
+    // Sampling parameters
     temperature: 0.7,
+    dynatemp_range: 0,
+    dynatemp_exponent: 1,
     top_p: 0.95,
     top_k: 40,
-    repeat_penalty: 1.1,
-    max_tokens: 2048,
-    seed: -1
+    min_p: 0.05,
+    typical_p: 1,
+    xtc_threshold: 0.1,
+    xtc_probability: 0.5,
+    
+    // Penalties
+    repeat_last_n: 64,
+    repeat_penalty: 1,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+    
+    // DRY (Don't Repeat Yourself) parameters
+    dry_multiplier: 0,
+    dry_base: 1.75,
+    dry_allowed_length: 2,
+    dry_penalty_last_n: -1,
+    
+    // Generation
+    max_tokens: -1,  // -1 = use model's context length
+    seed: -1,
+    
+    // Sampler order
+    samplers: "penalties;dry;top_k;typical_p;top_p;min_p;xtc;temperature"
 };
 
 // ===========================================
@@ -521,114 +544,155 @@ function cancelModelSelection() {
 }
 
 // ===========================================
+// LLM Settings Modal
+// ===========================================
+function openLLMSettings() {
+    const modal = document.getElementById('llm-settings-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Re-sync UI with current params
+        setupLLMParamSliders();
+    }
+}
+
+function closeLLMSettings() {
+    const modal = document.getElementById('llm-settings-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('llm-settings-modal');
+    if (e.target === modal) {
+        closeLLMSettings();
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeLLMSettings();
+    }
+});
+
+// ===========================================
 // LLM Parameters
 // ===========================================
 function setupLLMParamSliders() {
-    // Temperature slider
-    const tempSlider = document.getElementById('param-temperature');
-    const tempValue = document.getElementById('temp-value');
-    if (tempSlider && tempValue) {
-        tempSlider.addEventListener('input', () => {
-            llmParams.temperature = parseFloat(tempSlider.value);
-            tempValue.textContent = llmParams.temperature.toFixed(1);
-        });
+    // Helper function to setup a slider with value display
+    function setupSlider(sliderId, valueId, paramName, decimals = 2) {
+        const slider = document.getElementById(sliderId);
+        const valueEl = document.getElementById(valueId);
+        if (slider && valueEl) {
+            // Set initial value
+            slider.value = llmParams[paramName];
+            valueEl.textContent = decimals > 0 ? llmParams[paramName].toFixed(decimals) : llmParams[paramName];
+            
+            slider.addEventListener('input', () => {
+                llmParams[paramName] = parseFloat(slider.value);
+                valueEl.textContent = decimals > 0 ? llmParams[paramName].toFixed(decimals) : llmParams[paramName];
+            });
+        }
     }
     
-    // Top P slider
-    const topPSlider = document.getElementById('param-top-p');
-    const topPValue = document.getElementById('topp-value');
-    if (topPSlider && topPValue) {
-        topPSlider.addEventListener('input', () => {
-            llmParams.top_p = parseFloat(topPSlider.value);
-            topPValue.textContent = llmParams.top_p.toFixed(2);
-        });
+    // Helper function to setup a number input
+    function setupNumberInput(inputId, paramName) {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.value = llmParams[paramName];
+            input.addEventListener('change', () => {
+                llmParams[paramName] = parseInt(input.value) || llmParams[paramName];
+            });
+        }
     }
     
-    // Top K slider
-    const topKSlider = document.getElementById('param-top-k');
-    const topKValue = document.getElementById('topk-value');
-    if (topKSlider && topKValue) {
-        topKSlider.addEventListener('input', () => {
-            llmParams.top_k = parseInt(topKSlider.value);
-            topKValue.textContent = llmParams.top_k;
-        });
+    // Helper function to setup a text input
+    function setupTextInput(inputId, paramName) {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.value = llmParams[paramName];
+            input.addEventListener('change', () => {
+                llmParams[paramName] = input.value;
+            });
+        }
     }
     
-    // Repeat Penalty slider
-    const repeatSlider = document.getElementById('param-repeat-penalty');
-    const repeatValue = document.getElementById('repeat-value');
-    if (repeatSlider && repeatValue) {
-        repeatSlider.addEventListener('input', () => {
-            llmParams.repeat_penalty = parseFloat(repeatSlider.value);
-            repeatValue.textContent = llmParams.repeat_penalty.toFixed(2);
-        });
-    }
+    // Sampling parameters
+    setupSlider('param-temperature', 'temp-value', 'temperature', 2);
+    setupSlider('param-dynatemp-range', 'dynatemp-range-value', 'dynatemp_range', 1);
+    setupSlider('param-dynatemp-exp', 'dynatemp-exp-value', 'dynatemp_exponent', 1);
+    setupSlider('param-top-k', 'topk-value', 'top_k', 0);
+    setupSlider('param-top-p', 'topp-value', 'top_p', 2);
+    setupSlider('param-min-p', 'minp-value', 'min_p', 2);
+    setupSlider('param-typical-p', 'typicalp-value', 'typical_p', 2);
+    setupSlider('param-xtc-threshold', 'xtc-threshold-value', 'xtc_threshold', 2);
+    setupSlider('param-xtc-prob', 'xtc-prob-value', 'xtc_probability', 2);
     
-    // Max Tokens input
-    const maxTokensInput = document.getElementById('param-max-tokens');
-    if (maxTokensInput) {
-        maxTokensInput.addEventListener('change', () => {
-            llmParams.max_tokens = parseInt(maxTokensInput.value) || 2048;
-        });
-    }
+    // Penalties
+    setupNumberInput('param-repeat-last-n', 'repeat_last_n');
+    setupSlider('param-repeat-penalty', 'repeat-value', 'repeat_penalty', 2);
+    setupSlider('param-presence-penalty', 'presence-value', 'presence_penalty', 1);
+    setupSlider('param-frequency-penalty', 'frequency-value', 'frequency_penalty', 1);
     
-    // Seed input
-    const seedInput = document.getElementById('param-seed');
-    if (seedInput) {
-        seedInput.addEventListener('change', () => {
-            llmParams.seed = parseInt(seedInput.value) || -1;
-        });
-    }
+    // DRY parameters
+    setupSlider('param-dry-multiplier', 'dry-mult-value', 'dry_multiplier', 1);
+    setupSlider('param-dry-base', 'dry-base-value', 'dry_base', 2);
+    setupNumberInput('param-dry-allowed-length', 'dry_allowed_length');
+    setupNumberInput('param-dry-penalty-last-n', 'dry_penalty_last_n');
+    
+    // Generation
+    setupNumberInput('param-max-tokens', 'max_tokens');
+    setupNumberInput('param-seed', 'seed');
+    
+    // Sampler order
+    setupTextInput('param-samplers', 'samplers');
 }
+
+// Default LLM parameters
+const defaultLLMParams = {
+    // Sampling parameters
+    temperature: 0.7,
+    dynatemp_range: 0,
+    dynatemp_exponent: 1,
+    top_p: 0.95,
+    top_k: 40,
+    min_p: 0.05,
+    typical_p: 1,
+    xtc_threshold: 0.1,
+    xtc_probability: 0.5,
+    
+    // Penalties
+    repeat_last_n: 64,
+    repeat_penalty: 1,
+    presence_penalty: 0,
+    frequency_penalty: 0,
+    
+    // DRY (Don't Repeat Yourself) parameters
+    dry_multiplier: 0,
+    dry_base: 1.75,
+    dry_allowed_length: 2,
+    dry_penalty_last_n: -1,
+    
+    // Generation
+    max_tokens: -1,
+    seed: -1,
+    
+    // Sampler order
+    samplers: "penalties;dry;top_k;typical_p;top_p;min_p;xtc;temperature"
+};
 
 function resetLLMParams() {
     // Reset ai valori di default
-    llmParams = {
-        temperature: 0.7,
-        top_p: 0.95,
-        top_k: 40,
-        repeat_penalty: 1.1,
-        max_tokens: 2048,
-        seed: -1
-    };
+    llmParams = {...defaultLLMParams};
     
-    // Aggiorna UI
-    const tempSlider = document.getElementById('param-temperature');
-    const tempValue = document.getElementById('temp-value');
-    if (tempSlider) tempSlider.value = llmParams.temperature;
-    if (tempValue) tempValue.textContent = llmParams.temperature.toFixed(1);
-    
-    const topPSlider = document.getElementById('param-top-p');
-    const topPValue = document.getElementById('topp-value');
-    if (topPSlider) topPSlider.value = llmParams.top_p;
-    if (topPValue) topPValue.textContent = llmParams.top_p.toFixed(2);
-    
-    const topKSlider = document.getElementById('param-top-k');
-    const topKValue = document.getElementById('topk-value');
-    if (topKSlider) topKSlider.value = llmParams.top_k;
-    if (topKValue) topKValue.textContent = llmParams.top_k;
-    
-    const repeatSlider = document.getElementById('param-repeat-penalty');
-    const repeatValue = document.getElementById('repeat-value');
-    if (repeatSlider) repeatSlider.value = llmParams.repeat_penalty;
-    if (repeatValue) repeatValue.textContent = llmParams.repeat_penalty.toFixed(2);
-    
-    const maxTokensInput = document.getElementById('param-max-tokens');
-    if (maxTokensInput) maxTokensInput.value = llmParams.max_tokens;
-    
-    const seedInput = document.getElementById('param-seed');
-    if (seedInput) seedInput.value = llmParams.seed;
+    // Reinitialize all UI elements
+    setupLLMParamSliders();
 }
 
 function getLLMParams() {
-    return {
-        temperature: llmParams.temperature,
-        top_p: llmParams.top_p,
-        top_k: llmParams.top_k,
-        repeat_penalty: llmParams.repeat_penalty,
-        max_tokens: llmParams.max_tokens,
-        seed: llmParams.seed
-    };
+    return {...llmParams};
 }
 
 // ===========================================
@@ -1084,12 +1148,32 @@ function sendMessage() {
     socket.emit('chat_message', {
         session_id: currentSession,
         prompt: prompt,
+        // Basic parameters
         max_tokens: params.max_tokens,
         temperature: params.temperature,
         top_p: params.top_p,
         top_k: params.top_k,
+        seed: params.seed,
+        // Extended sampling parameters
+        min_p: params.min_p,
+        typical_p: params.typical_p,
+        dynatemp_range: params.dynatemp_range,
+        dynatemp_exponent: params.dynatemp_exponent,
+        // Penalties
+        repeat_last_n: params.repeat_last_n,
         repeat_penalty: params.repeat_penalty,
-        seed: params.seed
+        presence_penalty: params.presence_penalty,
+        frequency_penalty: params.frequency_penalty,
+        // DRY parameters
+        dry_multiplier: params.dry_multiplier,
+        dry_base: params.dry_base,
+        dry_allowed_length: params.dry_allowed_length,
+        dry_penalty_last_n: params.dry_penalty_last_n,
+        // XTC parameters
+        xtc_threshold: params.xtc_threshold,
+        xtc_probability: params.xtc_probability,
+        // Sampler order
+        samplers: params.samplers
     });
     
     // Timeout di sicurezza
