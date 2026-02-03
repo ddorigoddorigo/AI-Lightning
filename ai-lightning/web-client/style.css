@@ -546,8 +546,29 @@ button:disabled {
     text-align: center;
 }
 
-#session-config button {
-    margin-right: 10px;
+.session-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.session-buttons button {
+    margin: 0;
+}
+
+.btn-settings {
+    background: var(--secondary);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-settings:hover {
+    background: #3a7bc8;
+    transform: translateY(-1px);
 }
 
 /* ===========================================

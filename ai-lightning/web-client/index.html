@@ -70,7 +70,6 @@
                 <div class="config-row">
                     <label>Selected Model:</label>
                     <span id="selected-model-name">-</span>
-                    <button onclick="openLLMSettings()" class="btn-icon" title="LLM Settings">⚙️</button>
                 </div>
                 <div class="config-row">
                     <label for="minutes">Duration (minutes):</label>
@@ -81,8 +80,11 @@
                     <span id="estimated-cost">-</span>
                 </div>
                 
-                <button onclick="createSession()" class="btn-primary">⚡ Buy Session</button>
-                <button onclick="cancelModelSelection()" class="btn-secondary">Cancel</button>
+                <div class="session-buttons">
+                    <button onclick="createSession()" class="btn-primary">⚡ Buy Session</button>
+                    <button onclick="openLLMSettings()" class="btn-settings" title="LLM Generation Settings">🎛️ Settings</button>
+                    <button onclick="cancelModelSelection()" class="btn-secondary">Cancel</button>
+                </div>
             </div>
 
             <!-- LLM Settings Modal -->
