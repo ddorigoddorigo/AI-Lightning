@@ -733,12 +733,19 @@ def handle_message(data):
 
     # Verifica se il nodo è connesso via WebSocket
     if session.node_id in connected_nodes:
-        # Inoltra al nodo WebSocket con streaming abilitato
+        # Inoltra al nodo WebSocket con streaming abilitato e tutti i parametri LLM
         socketio.emit('inference_request', {
             'session_id': session.id,
             'prompt': data['prompt'],
+            # Parametri di generazione
             'max_tokens': data.get('max_tokens', 2048),
             'temperature': data.get('temperature', 0.7),
+            'top_k': data.get('top_k', 40),
+            'top_p': data.get('top_p', 0.95),
+            'repeat_penalty': data.get('repeat_penalty', 1.1),
+            'presence_penalty': data.get('presence_penalty', 0.0),
+            'frequency_penalty': data.get('frequency_penalty', 0.0),
+            'seed': data.get('seed', -1),
             'stop': data.get('stop', []),
             'stream': True  # Abilita streaming
         }, room=f"node_{session.node_id}")
@@ -767,6 +774,9 @@ def handle_message(data):
                 'prompt': data['prompt'],
                 'max_tokens': data.get('max_tokens', 2048),
                 'temperature': data.get('temperature', 0.7),
+                'top_k': data.get('top_k', 40),
+                'top_p': data.get('top_p', 0.95),
+                'repeat_penalty': data.get('repeat_penalty', 1.1),
                 'stop': data.get('stop', [])
             },
             timeout=180  # 3 minuti per generazioni lunghe

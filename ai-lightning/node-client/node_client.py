@@ -274,8 +274,24 @@ class LlamaProcess:
     def is_running(self):
         return self.process and self.process.poll() is None
     
-    def generate(self, prompt, max_tokens=2048, temperature=0.7, stop=None):
-        """Genera una risposta (non-streaming, per compatibilità)"""
+    def generate(self, prompt, max_tokens=2048, temperature=0.7, top_k=40, top_p=0.95, 
+                 repeat_penalty=1.1, presence_penalty=0.0, frequency_penalty=0.0, 
+                 seed=-1, stop=None):
+        """
+        Genera una risposta (non-streaming, per compatibilità).
+        
+        Args:
+            prompt: Il prompt da processare
+            max_tokens: Numero massimo di token da generare
+            temperature: Controlla la casualità (0=deterministico, 1+=più creativo)
+            top_k: Considera solo i top k token più probabili (0=disabilitato)
+            top_p: Nucleus sampling - considera token fino a probabilità cumulativa p
+            repeat_penalty: Penalizza la ripetizione di token (1.0=nessuna penalità)
+            presence_penalty: Penalizza token già apparsi (-2.0 a 2.0)
+            frequency_penalty: Penalizza token in base alla frequenza (-2.0 a 2.0)
+            seed: Seed per riproducibilità (-1=random)
+            stop: Lista di stringhe di stop
+        """
         if not self.is_running():
             return None, "Process not running"
         
@@ -286,6 +302,12 @@ class LlamaProcess:
                     'prompt': prompt,
                     'n_predict': max_tokens,
                     'temperature': temperature,
+                    'top_k': top_k,
+                    'top_p': top_p,
+                    'repeat_penalty': repeat_penalty,
+                    'presence_penalty': presence_penalty,
+                    'frequency_penalty': frequency_penalty,
+                    'seed': seed,
                     'stop': stop or [],
                     'stream': False
                 },
@@ -303,14 +325,22 @@ class LlamaProcess:
         except Exception as e:
             return None, str(e)
     
-    def generate_stream(self, prompt, max_tokens=2048, temperature=0.7, stop=None, token_callback=None):
+    def generate_stream(self, prompt, max_tokens=2048, temperature=0.7, top_k=40, top_p=0.95,
+                        repeat_penalty=1.1, presence_penalty=0.0, frequency_penalty=0.0,
+                        seed=-1, stop=None, token_callback=None):
         """
         Genera una risposta in streaming, token per token.
         
         Args:
             prompt: Il prompt da processare
-            max_tokens: Numero massimo di token
-            temperature: Temperatura per sampling
+            max_tokens: Numero massimo di token da generare
+            temperature: Controlla la casualità (0=deterministico, 1+=più creativo)
+            top_k: Considera solo i top k token più probabili (0=disabilitato)
+            top_p: Nucleus sampling - considera token fino a probabilità cumulativa p
+            repeat_penalty: Penalizza la ripetizione di token (1.0=nessuna penalità)
+            presence_penalty: Penalizza token già apparsi (-2.0 a 2.0)
+            frequency_penalty: Penalizza token in base alla frequenza (-2.0 a 2.0)
+            seed: Seed per riproducibilità (-1=random)
             stop: Lista di stringhe di stop
             token_callback: Funzione chiamata per ogni token generato (token, is_final)
         
@@ -336,6 +366,12 @@ class LlamaProcess:
                     'prompt': prompt,
                     'n_predict': max_tokens,
                     'temperature': temperature,
+                    'top_k': top_k,
+                    'top_p': top_p,
+                    'repeat_penalty': repeat_penalty,
+                    'presence_penalty': presence_penalty,
+                    'frequency_penalty': frequency_penalty,
+                    'seed': seed,
                     'stop': stop or [],
                     'stream': True
                 },
@@ -686,10 +722,20 @@ class NodeClient:
             """Richiesta di inferenza con streaming"""
             session_id = str(data['session_id'])
             prompt = data['prompt']
+            
+            # Parametri di generazione (con default sensati)
             max_tokens = data.get('max_tokens', 2048)
             temperature = data.get('temperature', 0.7)
+            top_k = data.get('top_k', 40)
+            top_p = data.get('top_p', 0.95)
+            repeat_penalty = data.get('repeat_penalty', 1.1)
+            presence_penalty = data.get('presence_penalty', 0.0)
+            frequency_penalty = data.get('frequency_penalty', 0.0)
+            seed = data.get('seed', -1)
             stop = data.get('stop', [])
             use_streaming = data.get('stream', True)  # Default: streaming abilitato
+            
+            logger.info(f"Inference request for session {session_id}: temp={temperature}, top_k={top_k}, top_p={top_p}")
             
             if session_id not in self.active_sessions:
                 self.sio.emit('inference_error', {
@@ -743,7 +789,16 @@ class NodeClient:
                     
                     logger.info(f"Starting streaming inference for session {session_id}")
                     result, error = llama.generate_stream(
-                        prompt, max_tokens, temperature, stop, 
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_k=top_k,
+                        top_p=top_p,
+                        repeat_penalty=repeat_penalty,
+                        presence_penalty=presence_penalty,
+                        frequency_penalty=frequency_penalty,
+                        seed=seed,
+                        stop=stop, 
                         token_callback=token_callback
                     )
                     logger.info(f"Streaming complete for session {session_id}: {token_count} tokens")
@@ -778,7 +833,18 @@ class NodeClient:
                 else:
                     # Non-streaming: risposta completa
                     start_time = time.time()
-                    result, error = llama.generate(prompt, max_tokens, temperature, stop)
+                    result, error = llama.generate(
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_k=top_k,
+                        top_p=top_p,
+                        repeat_penalty=repeat_penalty,
+                        presence_penalty=presence_penalty,
+                        frequency_penalty=frequency_penalty,
+                        seed=seed,
+                        stop=stop
+                    )
                     response_time_ms = (time.time() - start_time) * 1000
                     
                     if error:

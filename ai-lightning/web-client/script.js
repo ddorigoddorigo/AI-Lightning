@@ -1,7 +1,7 @@
 /**
- * AI Lightning - Web Client
+ * LightPhon - Web Client
  * 
- * Client per accesso AI decentralizzato con Lightning Network
+ * Decentralized LLMs with Lightning payments
  */
 
 // ===========================================
@@ -16,12 +16,25 @@ let onlineNodes = [];
 let isWaitingForResponse = false;
 let modelsRefreshInterval = null;
 
+// LLM Parameters (with defaults)
+let llmParams = {
+    temperature: 0.7,
+    top_p: 0.95,
+    top_k: 40,
+    repeat_penalty: 1.1,
+    max_tokens: 2048,
+    seed: -1
+};
+
 // ===========================================
 // Initialization
 // ===========================================
 document.addEventListener('DOMContentLoaded', () => {
     // Carica info rete (disponibile anche senza login)
     loadNetworkInfo();
+    
+    // Setup slider listeners per parametri LLM
+    setupLLMParamSliders();
     
     if (authToken) {
         connectSocket();
@@ -495,6 +508,9 @@ function selectModel(model) {
     document.getElementById('session-config').style.display = 'block';
     document.getElementById('selected-model-name').textContent = model.name;
     
+    // Reset parametri LLM ai valori di default
+    resetLLMParams();
+    
     updateEstimatedCost();
 }
 
@@ -503,6 +519,121 @@ function cancelModelSelection() {
     document.getElementById('session-config').style.display = 'none';
     document.getElementById('models-section').style.display = 'block';
 }
+
+// ===========================================
+// LLM Parameters
+// ===========================================
+function setupLLMParamSliders() {
+    // Temperature slider
+    const tempSlider = document.getElementById('param-temperature');
+    const tempValue = document.getElementById('temp-value');
+    if (tempSlider && tempValue) {
+        tempSlider.addEventListener('input', () => {
+            llmParams.temperature = parseFloat(tempSlider.value);
+            tempValue.textContent = llmParams.temperature.toFixed(1);
+        });
+    }
+    
+    // Top P slider
+    const topPSlider = document.getElementById('param-top-p');
+    const topPValue = document.getElementById('topp-value');
+    if (topPSlider && topPValue) {
+        topPSlider.addEventListener('input', () => {
+            llmParams.top_p = parseFloat(topPSlider.value);
+            topPValue.textContent = llmParams.top_p.toFixed(2);
+        });
+    }
+    
+    // Top K slider
+    const topKSlider = document.getElementById('param-top-k');
+    const topKValue = document.getElementById('topk-value');
+    if (topKSlider && topKValue) {
+        topKSlider.addEventListener('input', () => {
+            llmParams.top_k = parseInt(topKSlider.value);
+            topKValue.textContent = llmParams.top_k;
+        });
+    }
+    
+    // Repeat Penalty slider
+    const repeatSlider = document.getElementById('param-repeat-penalty');
+    const repeatValue = document.getElementById('repeat-value');
+    if (repeatSlider && repeatValue) {
+        repeatSlider.addEventListener('input', () => {
+            llmParams.repeat_penalty = parseFloat(repeatSlider.value);
+            repeatValue.textContent = llmParams.repeat_penalty.toFixed(2);
+        });
+    }
+    
+    // Max Tokens input
+    const maxTokensInput = document.getElementById('param-max-tokens');
+    if (maxTokensInput) {
+        maxTokensInput.addEventListener('change', () => {
+            llmParams.max_tokens = parseInt(maxTokensInput.value) || 2048;
+        });
+    }
+    
+    // Seed input
+    const seedInput = document.getElementById('param-seed');
+    if (seedInput) {
+        seedInput.addEventListener('change', () => {
+            llmParams.seed = parseInt(seedInput.value) || -1;
+        });
+    }
+}
+
+function resetLLMParams() {
+    // Reset ai valori di default
+    llmParams = {
+        temperature: 0.7,
+        top_p: 0.95,
+        top_k: 40,
+        repeat_penalty: 1.1,
+        max_tokens: 2048,
+        seed: -1
+    };
+    
+    // Aggiorna UI
+    const tempSlider = document.getElementById('param-temperature');
+    const tempValue = document.getElementById('temp-value');
+    if (tempSlider) tempSlider.value = llmParams.temperature;
+    if (tempValue) tempValue.textContent = llmParams.temperature.toFixed(1);
+    
+    const topPSlider = document.getElementById('param-top-p');
+    const topPValue = document.getElementById('topp-value');
+    if (topPSlider) topPSlider.value = llmParams.top_p;
+    if (topPValue) topPValue.textContent = llmParams.top_p.toFixed(2);
+    
+    const topKSlider = document.getElementById('param-top-k');
+    const topKValue = document.getElementById('topk-value');
+    if (topKSlider) topKSlider.value = llmParams.top_k;
+    if (topKValue) topKValue.textContent = llmParams.top_k;
+    
+    const repeatSlider = document.getElementById('param-repeat-penalty');
+    const repeatValue = document.getElementById('repeat-value');
+    if (repeatSlider) repeatSlider.value = llmParams.repeat_penalty;
+    if (repeatValue) repeatValue.textContent = llmParams.repeat_penalty.toFixed(2);
+    
+    const maxTokensInput = document.getElementById('param-max-tokens');
+    if (maxTokensInput) maxTokensInput.value = llmParams.max_tokens;
+    
+    const seedInput = document.getElementById('param-seed');
+    if (seedInput) seedInput.value = llmParams.seed;
+}
+
+function getLLMParams() {
+    return {
+        temperature: llmParams.temperature,
+        top_p: llmParams.top_p,
+        top_k: llmParams.top_k,
+        repeat_penalty: llmParams.repeat_penalty,
+        max_tokens: llmParams.max_tokens,
+        seed: llmParams.seed
+    };
+}
+
+// ===========================================
+// Session Cost
+// ===========================================
 
 function updateEstimatedCost() {
     const minutesEl = document.getElementById('minutes');
@@ -948,11 +1079,17 @@ function sendMessage() {
     
     addLoadingIndicator();
 
+    // Invia messaggio con tutti i parametri LLM configurati
+    const params = getLLMParams();
     socket.emit('chat_message', {
         session_id: currentSession,
         prompt: prompt,
-        max_tokens: 2048,
-        temperature: 0.7
+        max_tokens: params.max_tokens,
+        temperature: params.temperature,
+        top_p: params.top_p,
+        top_k: params.top_k,
+        repeat_penalty: params.repeat_penalty,
+        seed: params.seed
     });
     
     // Timeout di sicurezza
