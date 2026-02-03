@@ -216,16 +216,48 @@ def add_test_balance():
         return jsonify({'error': str(e)}), 500
 
 
+def get_busy_node_ids():
+    """
+    Restituisce l'insieme degli ID dei nodi attualmente in uso (con sessioni attive).
+    Un nodo è considerato "in uso" se ha almeno una sessione attiva non scaduta.
+    """
+    busy_nodes = set()
+    
+    # Query per sessioni attive
+    active_sessions = Session.query.filter(
+        Session.active == True,
+        Session.node_id != None,
+        Session.node_id != 'pending',
+        Session.expires_at > datetime.utcnow()
+    ).all()
+    
+    for session in active_sessions:
+        busy_nodes.add(session.node_id)
+    
+    return busy_nodes
+
+
 @app.route('/api/models/available', methods=['GET'])
 def get_available_models():
     """
     Restituisce lista aggregata di tutti i modelli disponibili dai nodi online.
+    Esclude i nodi attualmente in uso da altri utenti.
     Non richiede autenticazione.
     """
     models_map = {}  # model_id -> model_info + nodes_count
     
-    # Raccogli modelli dai nodi WebSocket connessi
+    # Ottieni i nodi attualmente occupati
+    busy_nodes = get_busy_node_ids()
+    available_nodes_count = 0
+    
+    # Raccogli modelli dai nodi WebSocket connessi (solo quelli liberi)
     for node_id, info in connected_nodes.items():
+        # Salta i nodi già in uso
+        if node_id in busy_nodes:
+            logger.debug(f"Node {node_id} is busy, skipping from available models")
+            continue
+        
+        available_nodes_count += 1
         node_models = info.get('models', [])
         hardware = info.get('hardware', {})
         node_name = info.get('name', node_id)
@@ -283,6 +315,8 @@ def get_available_models():
     return jsonify({
         'models': models_list,
         'total_nodes_online': len(connected_nodes),
+        'available_nodes': available_nodes_count,
+        'busy_nodes': len(busy_nodes),
         'timestamp': datetime.utcnow().isoformat()
     })
 
@@ -291,18 +325,22 @@ def get_available_models():
 def get_online_nodes():
     """
     Restituisce lista dei nodi online con le loro info hardware.
+    Indica anche se il nodo è attualmente in uso.
     Non richiede autenticazione.
     """
     nodes = []
+    busy_nodes = get_busy_node_ids()
     
     for node_id, info in connected_nodes.items():
         hardware = info.get('hardware', {})
         models = info.get('models', [])
+        is_busy = node_id in busy_nodes
         
         nodes.append({
             'node_id': node_id,
             'name': info.get('name', node_id),
             'models_count': len(models),
+            'status': 'busy' if is_busy else 'available',
             'hardware': {
                 'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
                 'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
@@ -322,6 +360,8 @@ def get_online_nodes():
     return jsonify({
         'nodes': nodes,
         'count': len(nodes),
+        'available': len(nodes) - len(busy_nodes),
+        'busy': len(busy_nodes),
         'timestamp': datetime.utcnow().isoformat()
     })
 
@@ -1263,13 +1303,22 @@ def handle_node_heartbeat(data):
 def get_websocket_node(model_query):
     """
     Trova un nodo WebSocket disponibile per il modello.
+    Esclude i nodi già in uso da altri utenti.
     
     model_query può essere:
     - Nome modello (vecchio formato)
     - ID modello (nuovo formato)
     - Nome parziale per matching fuzzy
     """
+    # Ottieni nodi occupati
+    busy_nodes = get_busy_node_ids()
+    
     for node_id, info in connected_nodes.items():
+        # Salta nodi già in uso
+        if node_id in busy_nodes:
+            logger.debug(f"Node {node_id} is busy, skipping")
+            continue
+            
         node_models = info.get('models', [])
         
         for model in node_models:
@@ -1291,8 +1340,19 @@ def get_websocket_node(model_query):
 
 
 def get_websocket_node_for_model_id(model_id):
-    """Trova un nodo WebSocket per uno specifico model_id."""
+    """
+    Trova un nodo WebSocket per uno specifico model_id.
+    Esclude i nodi già in uso da altri utenti.
+    """
+    # Ottieni nodi occupati
+    busy_nodes = get_busy_node_ids()
+    
     for node_id, info in connected_nodes.items():
+        # Salta nodi già in uso
+        if node_id in busy_nodes:
+            logger.debug(f"Node {node_id} is busy, skipping")
+            continue
+            
         for model in info.get('models', []):
             if isinstance(model, dict) and model.get('id') == model_id:
                 return node_id, info['sid'], model
