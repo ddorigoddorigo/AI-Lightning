@@ -255,12 +255,36 @@ class LlamaProcess:
         """Ferma il processo e interrompe streaming in corso"""
         self._stop_streaming = True  # Segnala stop allo streaming
         if self.process:
-            self.process.terminate()
+            pid = self.process.pid
+            logger.info(f"[STOP] Terminating llama-server process (PID: {pid})...")
+            
             try:
-                self.process.wait(timeout=5)
-            except:
-                self.process.kill()
+                # Su Windows, terminate() non funziona bene - usiamo taskkill
+                import platform
+                if platform.system() == 'Windows':
+                    import subprocess
+                    # Killa il processo e tutti i suoi figli
+                    subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)], 
+                                   capture_output=True, timeout=10)
+                    logger.info(f"[STOP] Used taskkill to force-terminate PID {pid}")
+                else:
+                    # Su Linux/Mac usa terminate + kill
+                    self.process.terminate()
+                    try:
+                        self.process.wait(timeout=5)
+                    except:
+                        self.process.kill()
+                        self.process.wait(timeout=5)
+            except Exception as e:
+                logger.error(f"[STOP] Error terminating process: {e}")
+                # Fallback: prova kill diretto
+                try:
+                    self.process.kill()
+                except:
+                    pass
+            
             self.process = None
+            logger.info(f"[STOP] llama-server process terminated successfully")
     
     def request_stop_streaming(self):
         """Richiede l'interruzione dello streaming corrente senza fermare il processo"""
