@@ -16,8 +16,15 @@
     <div class="container">
         <!-- Header -->
         <header id="header">
-            <h1>⚡ LightPhon</h1>
-            <p class="tagline">Decentralized LLMs with Lightning payments</p>
+            <div class="header-main">
+                <h1>⚡ LightPhon</h1>
+                <p class="tagline">Decentralized LLMs with Lightning payments</p>
+            </div>
+            <nav class="header-nav">
+                <a href="#" onclick="showAboutModal(); return false;">About</a>
+                <a href="#" onclick="showHowItWorksModal(); return false;">How it Works</a>
+                <a href="#" onclick="showBecomeNodeModal(); return false;">Become a Node</a>
+            </nav>
             <div id="network-status">
                 <span class="status-dot"></span>
                 <span id="nodes-count">Loading...</span>
@@ -326,7 +333,133 @@
                 <div id="nodes-list"></div>
             </div>
         </div>
+
+        <!-- About Modal -->
+        <div id="about-modal" class="modal" style="display: none;">
+            <div class="modal-content modal-info">
+                <span class="close" onclick="closeModal('about-modal')">&times;</span>
+                <h3>⚡ About LightPhon</h3>
+                <div class="modal-body">
+                    <p><strong>LightPhon</strong> is a decentralized AI marketplace that connects users with GPU providers worldwide. Access powerful Large Language Models (LLMs) and pay only for what you use with instant Bitcoin Lightning payments.</p>
+                    
+                    <h4>🎯 Our Mission</h4>
+                    <p>Make AI accessible to everyone while creating a fair marketplace where GPU owners can monetize their hardware and users get affordable, private AI access.</p>
+                    
+                    <h4>✨ Key Features</h4>
+                    <ul>
+                        <li><strong>Decentralized:</strong> No single point of failure, censorship-resistant</li>
+                        <li><strong>Pay-per-use:</strong> Only pay for the time you actually use</li>
+                        <li><strong>Privacy-first:</strong> Your conversations stay between you and the node</li>
+                        <li><strong>Open source:</strong> Transparent and community-driven</li>
+                        <li><strong>Lightning fast:</strong> Instant payments, instant access</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- How it Works Modal -->
+        <div id="howitworks-modal" class="modal" style="display: none;">
+            <div class="modal-content modal-info">
+                <span class="close" onclick="closeModal('howitworks-modal')">&times;</span>
+                <h3>🔄 How it Works</h3>
+                <div class="modal-body">
+                    <div class="steps">
+                        <div class="step">
+                            <span class="step-num">1</span>
+                            <h4>Choose a Model</h4>
+                            <p>Browse available AI models from our network of GPU providers. See specs, pricing, and capabilities.</p>
+                        </div>
+                        <div class="step">
+                            <span class="step-num">2</span>
+                            <h4>Pay with Lightning</h4>
+                            <p>Create a session and pay the invoice with any Lightning wallet. Payments are instant and final.</p>
+                        </div>
+                        <div class="step">
+                            <span class="step-num">3</span>
+                            <h4>Start Chatting</h4>
+                            <p>Once paid, the model loads on the node's GPU. Chat directly with no intermediaries.</p>
+                        </div>
+                        <div class="step">
+                            <span class="step-num">4</span>
+                            <h4>Session Ends</h4>
+                            <p>When time expires or you end the session, the model is unloaded. No data is stored.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Become a Node Modal -->
+        <div id="becomenode-modal" class="modal" style="display: none;">
+            <div class="modal-content modal-info">
+                <span class="close" onclick="closeModal('becomenode-modal')">&times;</span>
+                <h3>🖥️ Become a Node Provider</h3>
+                <div class="modal-body">
+                    <p>Have a powerful GPU? Join the LightPhon network and earn Bitcoin by providing AI inference services!</p>
+                    
+                    <h4>📋 Requirements</h4>
+                    <ul>
+                        <li><strong>GPU:</strong> NVIDIA GPU with 8GB+ VRAM (RTX 3080, 4090, etc.)</li>
+                        <li><strong>RAM:</strong> 16GB+ system memory</li>
+                        <li><strong>Internet:</strong> Stable connection with good upload speed</li>
+                        <li><strong>Software:</strong> llama.cpp with llama-server</li>
+                    </ul>
+                    
+                    <h4>💰 Earnings</h4>
+                    <p>You set your own price per minute. Popular rates are 50-200 sats/min depending on GPU power and model size.</p>
+                    
+                    <h4>🚀 Getting Started</h4>
+                    <ol>
+                        <li>Download the Node Client from our <a href="https://github.com/ddorigoddorigo/AI-Lightning" target="_blank">GitHub</a></li>
+                        <li>Install llama.cpp and llama-server</li>
+                        <li>Configure your models and pricing</li>
+                        <li>Run the node client and start earning!</li>
+                    </ol>
+                    
+                    <div class="cta-box">
+                        <a href="https://github.com/ddorigoddorigo/AI-Lightning" target="_blank" class="btn-primary">📥 Download Node Client</a>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Footer -->
+    <footer id="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>⚡ LightPhon</h4>
+                <p>Decentralized AI powered by Bitcoin Lightning Network. Access LLMs privately, pay only for what you use.</p>
+            </div>
+            <div class="footer-section">
+                <h4>Links</h4>
+                <ul>
+                    <li><a href="#" onclick="showAboutModal(); return false;">About Us</a></li>
+                    <li><a href="#" onclick="showHowItWorksModal(); return false;">How it Works</a></li>
+                    <li><a href="#" onclick="showBecomeNodeModal(); return false;">Become a Node</a></li>
+                    <li><a href="https://github.com/ddorigoddorigo/AI-Lightning" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Technology</h4>
+                <ul>
+                    <li>🧠 llama.cpp</li>
+                    <li>⚡ Lightning Network</li>
+                    <li>🔗 Socket.IO</li>
+                    <li>🐍 Python + Flask</li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Contact</h4>
+                <p>Open source project</p>
+                <p><a href="https://github.com/ddorigoddorigo/AI-Lightning/issues" target="_blank">Report Issues</a></p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>© 2026 LightPhon - Open Source under MIT License</p>
+            <p class="footer-tagline">🌐 Decentralized • ⚡ Instant • 🔒 Private</p>
+        </div>
+    </footer>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="script.js"></script>

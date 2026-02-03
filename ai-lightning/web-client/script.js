@@ -1509,3 +1509,28 @@ function showNotification(message, type = 'info') {
         setTimeout(() => notification.remove(), 300);
     }, 4000);
 }
+// ========================================
+// Info Modals (About, How it Works, etc.)
+// ========================================
+function showAboutModal() {
+    document.getElementById('about-modal').style.display = 'flex';
+}
+
+function showHowItWorksModal() {
+    document.getElementById('howitworks-modal').style.display = 'flex';
+}
+
+function showBecomeNodeModal() {
+    document.getElementById('becomenode-modal').style.display = 'flex';
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+// Close modals when clicking outside
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+    }
+});
