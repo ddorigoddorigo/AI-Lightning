@@ -343,11 +343,12 @@ async function loadUserProfile() {
 }
 
 function updateBalanceDisplay(balance) {
+    // Update userbar balance
     const balanceEl = document.getElementById('balance-amount');
     if (balanceEl) {
         balanceEl.textContent = balance.toLocaleString();
         
-        // Colore in base al balance
+        // Color based on balance
         const container = document.getElementById('user-balance');
         if (container) {
             container.classList.remove('low', 'ok', 'good');
@@ -359,6 +360,16 @@ function updateBalanceDisplay(balance) {
                 container.classList.add('good');
             }
         }
+    }
+    
+    // Also update wallet tab if it exists
+    const walletBalanceSats = document.getElementById('wallet-balance-sats');
+    if (walletBalanceSats) {
+        walletBalanceSats.textContent = balance.toLocaleString();
+    }
+    const walletBalanceBtc = document.getElementById('wallet-balance-btc');
+    if (walletBalanceBtc) {
+        walletBalanceBtc.textContent = `≈ ${(balance / 100_000_000).toFixed(8)} BTC`;
     }
 }
 
@@ -2094,8 +2105,8 @@ async function loadWalletData() {
         
         if (balanceRes.ok) {
             const data = await balanceRes.json();
-            document.getElementById('wallet-balance-sats').textContent = data.balance_sats.toLocaleString();
-            document.getElementById('wallet-balance-btc').textContent = `≈ ${data.balance_btc.toFixed(8)} BTC`;
+            // Update both wallet tab and userbar using unified function
+            updateBalanceDisplay(data.balance_sats);
         }
         
         // Get transactions

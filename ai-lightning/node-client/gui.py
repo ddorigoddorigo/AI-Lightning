@@ -942,19 +942,43 @@ class NodeGUI:
         for col in range(4):
             stats_container.columnconfigure(col, weight=1)
         
+        # Auto-refresh frame
+        refresh_frame = ttk.LabelFrame(main_frame, text="Auto Refresh", padding="10")
+        refresh_frame.pack(fill=tk.X, pady=10)
+        
+        self.stats_auto_refresh = tk.BooleanVar(value=False)
+        self.stats_refresh_interval = tk.StringVar(value="30")
+        
+        ttk.Checkbutton(refresh_frame, text="Auto-refresh statistics every", 
+                       variable=self.stats_auto_refresh, 
+                       command=self._toggle_stats_auto_refresh).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Spinbox(refresh_frame, textvariable=self.stats_refresh_interval, 
+                   from_=10, to=300, width=5).pack(side=tk.LEFT)
+        ttk.Label(refresh_frame, text="seconds").pack(side=tk.LEFT, padx=5)
+        
+        # Last update label
+        self.stats_last_update = tk.StringVar(value="Never updated")
+        ttk.Label(refresh_frame, textvariable=self.stats_last_update, 
+                 foreground='gray').pack(side=tk.RIGHT, padx=10)
+        
         # Button frame
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill=tk.X, pady=20)
         
         ttk.Button(btn_frame, text="🔄 Refresh Statistics", command=self._load_stats).pack(side=tk.LEFT, padx=5)
         ttk.Button(btn_frame, text="📋 Copy Report", command=self._copy_stats_report).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="🗑️ Reset Statistics", command=self._reset_stats).pack(side=tk.LEFT, padx=5)
         
         # Note
         note_label = ttk.Label(main_frame, 
-            text="ℹ️ Statistics are automatically updated during sessions.\n"
-                 "   Click 'Refresh' to get the latest data from server.",
+            text="ℹ️ Statistics are stored on the server and persist between sessions.\n"
+                 "   Enable auto-refresh to keep statistics updated in real-time.",
             style='Info.TLabel', foreground='gray')
         note_label.pack(pady=10)
+        
+        # Auto-refresh timer ID
+        self._stats_refresh_timer = None
     
     # === Hardware Detection ===
     
@@ -1668,6 +1692,106 @@ class NodeGUI:
         
         self.update_status("Report copied to clipboard")
         messagebox.showinfo("Copied", "Statistics report copied to clipboard!")
+    
+    def _toggle_stats_auto_refresh(self):
+        """Toggle auto-refresh of statistics"""
+        if self.stats_auto_refresh.get():
+            self._start_stats_auto_refresh()
+        else:
+            self._stop_stats_auto_refresh()
+    
+    def _start_stats_auto_refresh(self):
+        """Start auto-refresh timer"""
+        self._stop_stats_auto_refresh()  # Stop any existing timer
+        
+        try:
+            interval = int(self.stats_refresh_interval.get()) * 1000  # Convert to ms
+        except ValueError:
+            interval = 30000  # Default 30 seconds
+        
+        def refresh_cycle():
+            if self.stats_auto_refresh.get():
+                self._load_stats_silent()
+                self._stats_refresh_timer = self.root.after(interval, refresh_cycle)
+        
+        self._stats_refresh_timer = self.root.after(interval, refresh_cycle)
+        self.log(f"Auto-refresh enabled: every {interval // 1000} seconds")
+    
+    def _stop_stats_auto_refresh(self):
+        """Stop auto-refresh timer"""
+        if hasattr(self, '_stats_refresh_timer') and self._stats_refresh_timer:
+            self.root.after_cancel(self._stats_refresh_timer)
+            self._stats_refresh_timer = None
+    
+    def _load_stats_silent(self):
+        """Load statistics without showing warnings (for auto-refresh)"""
+        if not self.client or not self.client.is_connected():
+            return
+        
+        if requests is None:
+            return
+        
+        node_id = getattr(self.client, 'node_id', None)
+        if not node_id:
+            return
+        
+        def fetch_stats():
+            try:
+                server_url = self.client.server_url.replace('/socket.io', '')
+                server_url = server_url.rstrip('/')
+                
+                response = requests.get(f"{server_url}/api/node/stats/{node_id}", timeout=10)
+                
+                if response.status_code == 200:
+                    stats = response.json()
+                    self.root.after(0, lambda: self._update_stats_display_silent(stats))
+            except Exception:
+                pass  # Silent fail for auto-refresh
+        
+        threading.Thread(target=fetch_stats, daemon=True).start()
+    
+    def _update_stats_display_silent(self, stats):
+        """Update statistics display without logging (for auto-refresh)"""
+        try:
+            self._update_stats_display(stats)
+            # Update last refresh time
+            self.stats_last_update.set(f"Last update: {datetime.now().strftime('%H:%M:%S')}")
+        except Exception:
+            pass
+    
+    def _reset_stats(self):
+        """Reset statistics (requires confirmation)"""
+        if not messagebox.askyesno("Reset Statistics", 
+            "Are you sure you want to reset all statistics?\n\n"
+            "This action cannot be undone!"):
+            return
+        
+        if not self.client or not self.client.is_connected():
+            messagebox.showwarning("Not connected", "You must be connected to the server.")
+            return
+        
+        node_id = getattr(self.client, 'node_id', None)
+        if not node_id:
+            messagebox.showwarning("Missing Node ID", "Node ID not available.")
+            return
+        
+        def reset():
+            try:
+                server_url = self.client.server_url.replace('/socket.io', '')
+                server_url = server_url.rstrip('/')
+                
+                response = requests.post(f"{server_url}/api/node/stats/{node_id}/reset", timeout=10)
+                
+                if response.status_code == 200:
+                    self.root.after(0, lambda: self._update_stats_display({}))
+                    self.root.after(0, lambda: self.log("Statistics reset successfully"))
+                    self.root.after(0, lambda: messagebox.showinfo("Reset", "Statistics have been reset."))
+                else:
+                    self.root.after(0, lambda: self.log(f"Error resetting stats: {response.status_code}"))
+            except Exception as e:
+                self.root.after(0, lambda: self.log(f"Error resetting stats: {e}"))
+        
+        threading.Thread(target=reset, daemon=True).start()
     
     # === Auto-Updater ===
     

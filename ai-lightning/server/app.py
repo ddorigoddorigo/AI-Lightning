@@ -1777,6 +1777,32 @@ def update_node_stats_internal(node_id, **kwargs):
         return None
 
 
+@app.route('/api/node/stats/<node_id>/reset', methods=['POST'])
+def reset_node_stats(node_id):
+    """Reset statistics for a node."""
+    from models import NodeStats
+    
+    stats = NodeStats.query.filter_by(node_id=node_id).first()
+    if not stats:
+        return jsonify({'error': 'Node not found'}), 404
+    
+    # Reset all counters but keep dates
+    stats.total_sessions = 0
+    stats.completed_sessions = 0
+    stats.failed_sessions = 0
+    stats.total_requests = 0
+    stats.total_tokens_generated = 0
+    stats.total_minutes_active = 0
+    stats.total_earned_sats = 0
+    stats.avg_tokens_per_second = 0
+    stats.avg_response_time_ms = 0
+    
+    db.session.commit()
+    
+    logger.info(f"Reset statistics for node {node_id}")
+    return jsonify({'status': 'ok', 'message': 'Statistics reset successfully'})
+
+
 # ============================================
 # WebSocket handlers for nodes behind NAT
 # ============================================
