@@ -1288,6 +1288,59 @@ def start_session(data):
             session.active = True
             db.session.commit()
             
+            # Pay the node owner
+            if ws_node_id in connected_nodes:
+                owner_user_id = connected_nodes[ws_node_id].get('owner_user_id')
+                if owner_user_id and session.amount:
+                    # Calculate node payment (total - commission)
+                    commission = int(session.amount * PLATFORM_COMMISSION_RATE)
+                    node_payment = session.amount - commission
+                    
+                    # Credit node owner's balance
+                    owner = User.query.get(owner_user_id)
+                    if owner:
+                        owner.balance += node_payment
+                        
+                        # Record transaction for node owner
+                        from models import Transaction
+                        owner_tx = Transaction(
+                            type='node_earnings',
+                            user_id=owner.id,
+                            amount=node_payment,
+                            fee=0,
+                            balance_after=owner.balance,
+                            status='completed',
+                            description=f'Earnings from session {session.id} ({session.model})',
+                            reference_id=str(session.id),
+                            completed_at=datetime.utcnow()
+                        )
+                        db.session.add(owner_tx)
+                        
+                        logger.info(f"Paid {node_payment} sats to node owner (user #{owner_user_id}) for session {session.id}")
+                    
+                    # Credit commission to admin wallet
+                    admin_user = User.query.filter_by(is_admin=True).first()
+                    if admin_user:
+                        admin_user.balance += commission
+                        
+                        # Record transaction for admin
+                        admin_tx = Transaction(
+                            type='platform_commission',
+                            user_id=admin_user.id,
+                            amount=commission,
+                            fee=0,
+                            balance_after=admin_user.balance,
+                            status='completed',
+                            description=f'Commission from session {session.id} ({session.model})',
+                            reference_id=str(session.id),
+                            completed_at=datetime.utcnow()
+                        )
+                        db.session.add(admin_tx)
+                        
+                        logger.info(f"Credited {commission} sats commission to admin (user #{admin_user.id})")
+                    
+                    db.session.commit()
+            
             # Get context and hf_repo from model registered by node
             context = 4096  # Default
             model_hf_repo = None  # HuggingFace repo from registered model
