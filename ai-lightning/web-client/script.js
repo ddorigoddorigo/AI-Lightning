@@ -194,13 +194,19 @@ async function login() {
             body: JSON.stringify({username, password})
         });
 
+        // Verifica che la risposta sia JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Server error: ${response.status} - Server returned non-JSON response`);
+        }
+
         const data = await response.json();
         
         if (!response.ok) {
             throw new Error(data.error || 'Login failed');
         }
 
-        authToken = data.access_token;
+        authToken = data.access_token || data.token;
         localStorage.setItem('authToken', authToken);
         connectSocket();
         showMain();
@@ -230,6 +236,12 @@ async function register() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({username, password})
         });
+
+        // Verifica che la risposta sia JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Server error: ${response.status} - Server returned non-JSON response`);
+        }
 
         const data = await response.json();
         
