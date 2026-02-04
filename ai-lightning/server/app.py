@@ -1692,6 +1692,21 @@ def handle_node_register(data):
     hardware = data.get('hardware', {})
     node_name = data.get('name', '')
     price_per_minute = data.get('price_per_minute', 100)  # Default 100 sats/min
+    auth_token = data.get('auth_token')  # Token JWT dell'utente
+    user_id = data.get('user_id')  # ID dell'utente proprietario
+    
+    # Verifica autenticazione utente se fornita
+    owner_user_id = None
+    if auth_token:
+        try:
+            from flask_jwt_extended import decode_token
+            decoded = decode_token(auth_token)
+            owner_user_id = decoded.get('sub')  # user_id dal token
+            logger.info(f"Node authenticated as user {owner_user_id}")
+        except Exception as e:
+            logger.warning(f"Invalid auth_token for node: {e}")
+    elif user_id:
+        owner_user_id = user_id
     
     # Genera o valida node_id
     node_id = None
@@ -1712,7 +1727,7 @@ def handle_node_register(data):
         token = uuid.uuid4().hex
         
         nm = get_node_manager()
-        nm.redis.hset(f"node:{node_id}", mapping={
+        node_data_redis = {
             'id': node_id,
             'token': token,
             'name': node_name or node_id,
@@ -1723,7 +1738,12 @@ def handle_node_register(data):
             'type': 'websocket',
             'last_ping': datetime.utcnow().timestamp(),
             'load': 0
-        })
+        }
+        # Salva owner se autenticato
+        if owner_user_id:
+            node_data_redis['owner_user_id'] = owner_user_id
+        
+        nm.redis.hset(f"node:{node_id}", mapping=node_data_redis)
         nm.redis.sadd(nm.nodes_set_key, node_id)
     else:
         # Aggiorna nodo esistente
@@ -1733,6 +1753,9 @@ def handle_node_register(data):
             'last_ping': datetime.utcnow().timestamp(),
             'price_per_minute': price_per_minute,
         }
+        # Aggiorna owner se autenticato
+        if owner_user_id:
+            update_data['owner_user_id'] = owner_user_id
         if models:
             update_data['models'] = json.dumps(models)
         if hardware:
@@ -1747,7 +1770,8 @@ def handle_node_register(data):
         'models': models,
         'hardware': hardware,
         'name': node_name or node_id,
-        'price_per_minute': price_per_minute
+        'price_per_minute': price_per_minute,
+        'owner_user_id': owner_user_id  # ID utente proprietario
     }
     
     join_room(f"node_{node_id}")
@@ -1756,20 +1780,24 @@ def handle_node_register(data):
     total_vram = hardware.get('total_vram_mb', 0) if hardware else 0
     gpu_count = len(hardware.get('gpus', [])) if hardware else 0
     
-    # Aggiorna statistiche nodo (first_online, last_online)
+    # Aggiorna statistiche nodo (first_online, last_online) e owner
     from models import NodeStats
     stats = NodeStats.query.filter_by(node_id=node_id).first()
     if not stats:
         stats = NodeStats(node_id=node_id, first_online=datetime.utcnow())
         db.session.add(stats)
     stats.last_online = datetime.utcnow()
+    if owner_user_id:
+        stats.owner_user_id = owner_user_id
     db.session.commit()
     
-    logger.info(f"Node {node_id} ({node_name}) registered via WebSocket - {len(models)} models, {gpu_count} GPUs, {total_vram}MB VRAM")
+    owner_str = f", owner: user#{owner_user_id}" if owner_user_id else ""
+    logger.info(f"Node {node_id} ({node_name}) registered via WebSocket - {len(models)} models, {gpu_count} GPUs, {total_vram}MB VRAM{owner_str}")
     
     emit('node_registered', {
         'node_id': node_id,
-        'token': token
+        'token': token,
+        'owner_user_id': owner_user_id  # Restituisci al client
     })
 
 

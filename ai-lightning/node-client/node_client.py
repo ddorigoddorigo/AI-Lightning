@@ -670,6 +670,10 @@ class NodeClient:
         self.running = False
         self._connected = False
         
+        # Autenticazione utente (impostata dalla GUI)
+        self.auth_token = None
+        self.user_id = None
+        
         # GUI callbacks for LLM output visualization
         self.gui_prompt_callback = None  # Called with (session_id, prompt)
         self.gui_token_callback = None   # Called with (token, is_final)
@@ -691,6 +695,12 @@ class NodeClient:
                 'models': self.models if self.models else list(self.models_config.keys()),
                 'price_per_minute': self.price_per_minute,
             }
+            
+            # Aggiungi autenticazione utente se disponibile
+            if self.auth_token:
+                registration_data['auth_token'] = self.auth_token
+            if self.user_id:
+                registration_data['user_id'] = self.user_id
             
             # Aggiungi hardware info se disponibile
             if self.hardware_info:

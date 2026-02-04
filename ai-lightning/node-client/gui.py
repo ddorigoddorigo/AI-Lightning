@@ -76,6 +76,11 @@ class NodeGUI:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
+        # === Tab 0: Account ===
+        self.account_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.account_frame, text="👤 Account")
+        self._create_account_tab()
+        
         # === Tab 1: Hardware ===
         self.hw_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.hw_frame, text="🖥️ Hardware")
@@ -132,6 +137,336 @@ class NodeGUI:
         
         # Salva config alla chiusura
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+    
+    def _create_account_tab(self):
+        """Tab Account - Login e Registrazione"""
+        
+        # Variabili account
+        self.logged_in = False
+        self.auth_token = None
+        self.user_info = {}
+        
+        # Frame principale
+        main_frame = ttk.Frame(self.account_frame, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Header
+        header = ttk.Label(main_frame, text="👤 Account LightPhon", font=('Arial', 16, 'bold'))
+        header.pack(pady=(0, 20))
+        
+        # === Frame Login (default visibile) ===
+        self.login_frame = ttk.LabelFrame(main_frame, text="🔐 Login", padding=15)
+        self.login_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Label(self.login_frame, text="Email/Username:").grid(row=0, column=0, sticky='w', pady=5)
+        self.login_username = tk.StringVar()
+        ttk.Entry(self.login_frame, textvariable=self.login_username, width=40).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+        
+        ttk.Label(self.login_frame, text="Password:").grid(row=1, column=0, sticky='w', pady=5)
+        self.login_password = tk.StringVar()
+        ttk.Entry(self.login_frame, textvariable=self.login_password, show='*', width=40).grid(row=1, column=1, padx=10, pady=5, sticky='ew')
+        
+        btn_frame = ttk.Frame(self.login_frame)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=15)
+        
+        self.login_btn = ttk.Button(btn_frame, text="🔑 Login", command=self._do_login, width=15)
+        self.login_btn.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(btn_frame, text="📝 Registrati", command=self._show_register, width=15).pack(side=tk.LEFT, padx=5)
+        
+        self.login_status = tk.StringVar(value="")
+        ttk.Label(self.login_frame, textvariable=self.login_status, foreground='red').grid(row=3, column=0, columnspan=2, pady=5)
+        
+        self.login_frame.columnconfigure(1, weight=1)
+        
+        # === Frame Registrazione (nascosto di default) ===
+        self.register_frame = ttk.LabelFrame(main_frame, text="📝 Registrazione", padding=15)
+        # Non facciamo pack, sarà mostrato con _show_register
+        
+        ttk.Label(self.register_frame, text="Username:").grid(row=0, column=0, sticky='w', pady=5)
+        self.reg_username = tk.StringVar()
+        ttk.Entry(self.register_frame, textvariable=self.reg_username, width=40).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
+        
+        ttk.Label(self.register_frame, text="Email:").grid(row=1, column=0, sticky='w', pady=5)
+        self.reg_email = tk.StringVar()
+        ttk.Entry(self.register_frame, textvariable=self.reg_email, width=40).grid(row=1, column=1, padx=10, pady=5, sticky='ew')
+        
+        ttk.Label(self.register_frame, text="Password:").grid(row=2, column=0, sticky='w', pady=5)
+        self.reg_password = tk.StringVar()
+        ttk.Entry(self.register_frame, textvariable=self.reg_password, show='*', width=40).grid(row=2, column=1, padx=10, pady=5, sticky='ew')
+        
+        ttk.Label(self.register_frame, text="Conferma Password:").grid(row=3, column=0, sticky='w', pady=5)
+        self.reg_confirm = tk.StringVar()
+        ttk.Entry(self.register_frame, textvariable=self.reg_confirm, show='*', width=40).grid(row=3, column=1, padx=10, pady=5, sticky='ew')
+        
+        reg_btn_frame = ttk.Frame(self.register_frame)
+        reg_btn_frame.grid(row=4, column=0, columnspan=2, pady=15)
+        
+        ttk.Button(reg_btn_frame, text="✓ Registrati", command=self._do_register, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(reg_btn_frame, text="← Torna al Login", command=self._show_login, width=15).pack(side=tk.LEFT, padx=5)
+        
+        self.register_status = tk.StringVar(value="")
+        ttk.Label(self.register_frame, textvariable=self.register_status, foreground='red').grid(row=5, column=0, columnspan=2, pady=5)
+        
+        self.register_frame.columnconfigure(1, weight=1)
+        
+        # === Frame Account Connesso (nascosto di default) ===
+        self.account_info_frame = ttk.LabelFrame(main_frame, text="✓ Account Connesso", padding=15)
+        # Non facciamo pack, sarà mostrato dopo login
+        
+        self.account_user_var = tk.StringVar(value="")
+        ttk.Label(self.account_info_frame, text="👤 Utente:", font=('Arial', 10, 'bold')).grid(row=0, column=0, sticky='w', pady=5)
+        ttk.Label(self.account_info_frame, textvariable=self.account_user_var, font=('Arial', 11)).grid(row=0, column=1, sticky='w', padx=10, pady=5)
+        
+        self.account_email_var = tk.StringVar(value="")
+        ttk.Label(self.account_info_frame, text="📧 Email:", font=('Arial', 10, 'bold')).grid(row=1, column=0, sticky='w', pady=5)
+        ttk.Label(self.account_info_frame, textvariable=self.account_email_var, font=('Arial', 10)).grid(row=1, column=1, sticky='w', padx=10, pady=5)
+        
+        self.account_balance_var = tk.StringVar(value="0 sats")
+        ttk.Label(self.account_info_frame, text="⚡ Saldo:", font=('Arial', 10, 'bold')).grid(row=2, column=0, sticky='w', pady=5)
+        ttk.Label(self.account_info_frame, textvariable=self.account_balance_var, font=('Arial', 11, 'bold'), foreground='orange').grid(row=2, column=1, sticky='w', padx=10, pady=5)
+        
+        self.account_earnings_var = tk.StringVar(value="0 sats")
+        ttk.Label(self.account_info_frame, text="💰 Guadagni Nodo:", font=('Arial', 10, 'bold')).grid(row=3, column=0, sticky='w', pady=5)
+        ttk.Label(self.account_info_frame, textvariable=self.account_earnings_var, font=('Arial', 11, 'bold'), foreground='green').grid(row=3, column=1, sticky='w', padx=10, pady=5)
+        
+        account_btn_frame = ttk.Frame(self.account_info_frame)
+        account_btn_frame.grid(row=4, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(account_btn_frame, text="🔄 Aggiorna", command=self._refresh_account, width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Button(account_btn_frame, text="🚪 Logout", command=self._do_logout, width=12).pack(side=tk.LEFT, padx=5)
+        
+        self.account_info_frame.columnconfigure(1, weight=1)
+        
+        # Note
+        note_frame = ttk.Frame(main_frame)
+        note_frame.pack(fill=tk.X, pady=20)
+        
+        note_text = (
+            "ℹ️ Effettua il login con lo stesso account che usi su lightphon.com\n"
+            "   I guadagni del tuo nodo verranno accreditati sul tuo saldo.\n"
+            "   Potrai poi prelevare i satoshi tramite Lightning Network."
+        )
+        ttk.Label(note_frame, text=note_text, font=('Arial', 9), foreground='gray', justify='left').pack(anchor='w')
+        
+        # Carica credenziali salvate
+        self._load_account_config()
+    
+    def _show_register(self):
+        """Mostra form registrazione"""
+        self.login_frame.pack_forget()
+        self.register_frame.pack(fill=tk.X, pady=10)
+    
+    def _show_login(self):
+        """Mostra form login"""
+        self.register_frame.pack_forget()
+        self.login_frame.pack(fill=tk.X, pady=10)
+    
+    def _load_account_config(self):
+        """Carica credenziali salvate"""
+        if os.path.exists(self.config_path):
+            self.config.read(self.config_path)
+            saved_username = self.config.get('Account', 'username', fallback='')
+            saved_token = self.config.get('Account', 'token', fallback='')
+            
+            if saved_username:
+                self.login_username.set(saved_username)
+            
+            # Se c'è un token salvato, prova auto-login
+            if saved_token:
+                self.auth_token = saved_token
+                self.root.after(500, self._try_auto_login)
+    
+    def _try_auto_login(self):
+        """Prova login automatico con token salvato"""
+        if not self.auth_token:
+            return
+        
+        self.login_status.set("Auto-login in corso...")
+        
+        def do_auto():
+            try:
+                server_url = "http://51.178.142.183:5000"
+                response = requests.get(
+                    f"{server_url}/api/me",
+                    headers={'Authorization': f'Bearer {self.auth_token}'},
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    self.root.after(0, lambda: self._on_login_success(data, auto=True))
+                else:
+                    # Token scaduto/invalido
+                    self.auth_token = None
+                    self.root.after(0, lambda: self.login_status.set("Sessione scaduta, effettua il login"))
+            except Exception as e:
+                self.root.after(0, lambda: self.login_status.set(f"Errore: {e}"))
+        
+        threading.Thread(target=do_auto, daemon=True).start()
+    
+    def _do_login(self):
+        """Esegui login"""
+        username = self.login_username.get().strip()
+        password = self.login_password.get()
+        
+        if not username or not password:
+            self.login_status.set("Inserisci username e password")
+            return
+        
+        self.login_status.set("Login in corso...")
+        self.login_btn.config(state='disabled')
+        
+        def do_login():
+            try:
+                server_url = "http://51.178.142.183:5000"
+                response = requests.post(
+                    f"{server_url}/api/login",
+                    json={'username': username, 'password': password},
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    self.auth_token = data.get('token')
+                    self.root.after(0, lambda: self._on_login_success(data))
+                else:
+                    error = response.json().get('error', 'Login fallito')
+                    self.root.after(0, lambda: self.login_status.set(f"❌ {error}"))
+                    self.root.after(0, lambda: self.login_btn.config(state='normal'))
+            except Exception as e:
+                self.root.after(0, lambda: self.login_status.set(f"❌ Errore: {e}"))
+                self.root.after(0, lambda: self.login_btn.config(state='normal'))
+        
+        threading.Thread(target=do_login, daemon=True).start()
+    
+    def _on_login_success(self, data, auto=False):
+        """Callback login riuscito"""
+        self.logged_in = True
+        self.user_info = data
+        
+        # Salva token e username
+        if 'Account' not in self.config:
+            self.config['Account'] = {}
+        self.config['Account']['username'] = self.login_username.get()
+        self.config['Account']['token'] = self.auth_token or ''
+        self._save_config()
+        
+        # Aggiorna UI
+        self.account_user_var.set(data.get('username', ''))
+        self.account_email_var.set(data.get('email', ''))
+        balance = data.get('balance', 0)
+        self.account_balance_var.set(f"{balance:,} sats".replace(',', '.'))
+        
+        # Nascondi login, mostra info account
+        self.login_frame.pack_forget()
+        self.register_frame.pack_forget()
+        self.account_info_frame.pack(fill=tk.X, pady=10)
+        
+        self.login_btn.config(state='normal')
+        self.login_status.set("")
+        
+        self.log(f"Login effettuato: {data.get('username')}")
+        self.update_status(f"Connesso come: {data.get('username')}")
+        
+        # Carica guadagni nodo
+        self._load_node_earnings()
+    
+    def _do_register(self):
+        """Esegui registrazione"""
+        username = self.reg_username.get().strip()
+        email = self.reg_email.get().strip()
+        password = self.reg_password.get()
+        confirm = self.reg_confirm.get()
+        
+        if not username or not email or not password:
+            self.register_status.set("Compila tutti i campi")
+            return
+        
+        if password != confirm:
+            self.register_status.set("Le password non coincidono")
+            return
+        
+        if len(password) < 8:
+            self.register_status.set("Password deve essere almeno 8 caratteri")
+            return
+        
+        self.register_status.set("Registrazione in corso...")
+        
+        def do_register():
+            try:
+                server_url = "http://51.178.142.183:5000"
+                response = requests.post(
+                    f"{server_url}/api/register",
+                    json={'username': username, 'email': email, 'password': password},
+                    timeout=10
+                )
+                
+                if response.status_code == 201:
+                    self.root.after(0, lambda: self.register_status.set(""))
+                    self.root.after(0, lambda: messagebox.showinfo("Registrazione", "✓ Registrazione completata!\nOra puoi effettuare il login."))
+                    self.root.after(0, self._show_login)
+                    self.root.after(0, lambda: self.login_username.set(username))
+                else:
+                    error = response.json().get('error', 'Registrazione fallita')
+                    self.root.after(0, lambda: self.register_status.set(f"❌ {error}"))
+            except Exception as e:
+                self.root.after(0, lambda: self.register_status.set(f"❌ Errore: {e}"))
+        
+        threading.Thread(target=do_register, daemon=True).start()
+    
+    def _do_logout(self):
+        """Esegui logout"""
+        self.logged_in = False
+        self.auth_token = None
+        self.user_info = {}
+        
+        # Rimuovi token salvato
+        if 'Account' in self.config:
+            self.config['Account']['token'] = ''
+            self._save_config()
+        
+        # Mostra login
+        self.account_info_frame.pack_forget()
+        self.login_frame.pack(fill=tk.X, pady=10)
+        self.login_password.set('')
+        
+        self.log("Logout effettuato")
+        self.update_status("Disconnesso dall'account")
+    
+    def _refresh_account(self):
+        """Aggiorna info account"""
+        if not self.auth_token:
+            return
+        
+        def do_refresh():
+            try:
+                server_url = "http://51.178.142.183:5000"
+                response = requests.get(
+                    f"{server_url}/api/me",
+                    headers={'Authorization': f'Bearer {self.auth_token}'},
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    self.user_info = data
+                    self.root.after(0, lambda: self.account_user_var.set(data.get('username', '')))
+                    self.root.after(0, lambda: self.account_email_var.set(data.get('email', '')))
+                    balance = data.get('balance', 0)
+                    self.root.after(0, lambda: self.account_balance_var.set(f"{balance:,} sats".replace(',', '.')))
+                    self.root.after(0, lambda: self.update_status("Account aggiornato"))
+                    self.root.after(0, self._load_node_earnings)
+            except Exception as e:
+                self.root.after(0, lambda: self.log(f"Errore aggiornamento account: {e}"))
+        
+        threading.Thread(target=do_refresh, daemon=True).start()
+    
+    def _load_node_earnings(self):
+        """Carica guadagni nodo dall'account"""
+        # I guadagni sono già nel balance, ma potremmo voler mostrare separatamente
+        # Per ora mostriamo che il saldo include i guadagni del nodo
+        self.account_earnings_var.set("Inclusi nel saldo ⬆️")
     
     def _create_hardware_tab(self):
         """Tab informazioni hardware"""
@@ -943,7 +1278,7 @@ class NodeGUI:
     
     def _save_config(self):
         """Salva configurazione"""
-        for section in ['Node', 'Server', 'LLM', 'Models']:
+        for section in ['Node', 'Server', 'LLM', 'Models', 'Account']:
             if section not in self.config:
                 self.config[section] = {}
         
@@ -956,11 +1291,25 @@ class NodeGUI:
         self.config['LLM']['gpu_layers'] = self.gpu_layers.get()
         self.config['Models']['directory'] = self.models_folder.get()
         
+        # Salva credenziali account (se esistono le variabili)
+        if hasattr(self, 'login_username'):
+            self.config['Account']['username'] = self.login_username.get()
+        if hasattr(self, 'auth_token') and self.auth_token:
+            self.config['Account']['token'] = self.auth_token
+        
         with open(self.config_path, 'w') as f:
             self.config.write(f)
     
     def connect(self):
         """Connetti al server"""
+        # Verifica login
+        if not hasattr(self, 'logged_in') or not self.logged_in:
+            messagebox.showwarning("Login richiesto", 
+                "Devi effettuare il login prima di connettere il nodo.\n\n"
+                "Vai alla tab 'Account' e accedi con le tue credenziali.")
+            self.notebook.select(0)  # Vai alla tab Account
+            return
+        
         self._save_config()
         
         self.update_status("Connessione in corso...")
@@ -972,6 +1321,10 @@ class NodeGUI:
                 self.client = NodeClient(self.config_path)
                 self.client.server_url = self.server_url.get()
                 self.client.node_name = self.node_name.get()
+                
+                # Passa token autenticazione utente
+                self.client.auth_token = self.auth_token
+                self.client.user_id = self.user_info.get('user_id')
                 
                 # Collega callbacks GUI per visualizzare output LLM
                 self.client.gui_prompt_callback = self.llm_set_prompt
@@ -993,6 +1346,7 @@ class NodeGUI:
                 import traceback
                 err = traceback.format_exc()
                 self.root.after(0, lambda: self.log(f"Errore:\n{err}"))
+                self.root.after(0, lambda: self._on_connection_failed(str(e)))
                 self.root.after(0, lambda: self._on_connection_failed(str(e)))
         
         threading.Thread(target=do_connect, daemon=True).start()

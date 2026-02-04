@@ -81,6 +81,7 @@ class NodeStats(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     node_id = db.Column(db.String(64), db.ForeignKey('nodes.id'), nullable=False, unique=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # Utente proprietario
     
     # Contatori sessioni
     total_sessions = db.Column(db.Integer, default=0)
@@ -108,11 +109,13 @@ class NodeStats(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     node = db.relationship('Node', backref=db.backref('stats', uselist=False))
+    owner = db.relationship('User', backref=db.backref('owned_nodes', lazy='dynamic'))
 
     def to_dict(self):
         """Converti in dizionario per API."""
         return {
             'node_id': self.node_id,
+            'owner_user_id': self.owner_user_id,
             'total_sessions': self.total_sessions,
             'completed_sessions': self.completed_sessions,
             'failed_sessions': self.failed_sessions,
