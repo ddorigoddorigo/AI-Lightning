@@ -95,6 +95,38 @@ def index():
     """Pagina principale (web client)."""
     return render_template('index.html')
 
+# ============================================
+# Auto-Update API
+# ============================================
+
+# Versione corrente del node-client
+NODE_CLIENT_VERSION = "1.0.0"
+NODE_CLIENT_CHANGELOG = """
+## v1.0.0 (2026-02-04)
+- Initial release
+- HuggingFace model support
+- Disk space monitoring
+- Auto-update functionality
+"""
+
+@app.route('/api/version', methods=['GET'])
+def get_version():
+    """
+    Return current node-client version info for auto-update.
+    The download_url should point to the latest compiled .exe
+    """
+    # Base URL for downloads (GitHub releases or server)
+    base_url = request.host_url.rstrip('/')
+    
+    return jsonify({
+        'version': NODE_CLIENT_VERSION,
+        'changelog': NODE_CLIENT_CHANGELOG.strip(),
+        'download_url': f'{base_url}/static/releases/LightPhon-Node-{NODE_CLIENT_VERSION}.exe',
+        'checksum': None,  # SHA256 checksum (optional, set after build)
+        'release_date': '2026-02-04',
+        'min_version': '0.9.0'  # Minimum version required (for forced updates)
+    })
+
 # Auth routes
 @app.route('/api/register', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)  # 5 registrazioni/minuto per IP

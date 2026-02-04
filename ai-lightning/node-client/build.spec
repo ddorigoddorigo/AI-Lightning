@@ -11,6 +11,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('config.ini.example', '.'),
+        ('version.py', '.'),  # Include version info
     ],
     hiddenimports=[
         'socketio',
@@ -21,6 +22,8 @@ a = Analysis(
         'sniffio',
         'h11',
         'certifi',
+        'version',
+        'updater',
     ],
     hookspath=[],
     hooksconfig={},
@@ -41,7 +44,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='AI-Lightning-Node',
+    name='LightPhon-Node',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

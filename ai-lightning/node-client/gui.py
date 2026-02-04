@@ -24,12 +24,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from node_client import NodeClient, detect_gpu, find_llama_binary
 from hardware_detect import get_system_info, format_system_info
 from model_manager import ModelManager, ModelInfo
+from version import VERSION
+from updater import AutoUpdater
 
 
 class NodeGUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("AI Lightning Node - Host GPU")
+        self.root.title(f"AI Lightning Node - Host GPU v{VERSION}")
         self.root.geometry("800x650")
         self.root.resizable(True, True)
         
@@ -46,18 +48,26 @@ class NodeGUI:
         self.system_info = None
         self.model_manager = None
         
+        # Auto-updater
+        self.updater = AutoUpdater(callback=self._on_update_available)
+        self.update_pending = False
+        
         # Style
         style = ttk.Style()
         style.configure('Connected.TLabel', foreground='green', font=('Arial', 12, 'bold'))
         style.configure('Disconnected.TLabel', foreground='red', font=('Arial', 12, 'bold'))
         style.configure('Header.TLabel', font=('Arial', 10, 'bold'))
         style.configure('Info.TLabel', font=('Arial', 9))
+        style.configure('Update.TButton', foreground='orange')
         
         self._create_ui()
         self._load_config()
         
         # Rileva hardware all'avvio
         self.root.after(100, self._detect_hardware)
+        
+        # Avvia auto-updater
+        self.root.after(5000, self._start_updater)
     
     def _create_ui(self):
         """Crea l'interfaccia"""
@@ -108,6 +118,14 @@ class NodeGUI:
         self.status_var = tk.StringVar(value="Avvio in corso...")
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor='w')
         self.status_label.pack(fill=tk.X, side=tk.LEFT, expand=True)
+        
+        # Pulsante controllo aggiornamenti
+        self.update_btn = ttk.Button(status_frame, text="🔄", width=3, command=self.check_update_manual)
+        self.update_btn.pack(side=tk.RIGHT, padx=2)
+        
+        # Etichetta versione
+        version_label = ttk.Label(status_frame, text=f"v{VERSION}", font=('Arial', 8))
+        version_label.pack(side=tk.RIGHT, padx=5)
         
         self.conn_indicator = ttk.Label(status_frame, text="● Disconnesso", style='Disconnected.TLabel')
         self.conn_indicator.pack(side=tk.RIGHT, padx=10)
@@ -1183,11 +1201,122 @@ class NodeGUI:
         self.update_status("Report copiato negli appunti")
         messagebox.showinfo("Copiato", "Report statistiche copiato negli appunti!")
     
+    # === Auto-Updater ===
+    
+    def _start_updater(self):
+        """Avvia il controllo automatico degli aggiornamenti"""
+        self.updater.start_checking(interval=3600)  # Ogni ora
+        self._log("Auto-updater avviato")
+    
+    def _on_update_available(self, version, changelog, download_url):
+        """Callback chiamato quando è disponibile un aggiornamento"""
+        self.update_pending = True
+        # Aggiorna UI dal thread principale
+        self.root.after(0, lambda: self._show_update_notification(version, changelog))
+    
+    def _show_update_notification(self, version, changelog):
+        """Mostra notifica di aggiornamento disponibile"""
+        self._log(f"🔄 Aggiornamento disponibile: v{version}")
+        self.status_var.set(f"Aggiornamento disponibile: v{version}")
+        
+        # Mostra dialog
+        response = messagebox.askyesno(
+            "Aggiornamento Disponibile",
+            f"È disponibile la versione {version} di LightPhon Node.\n\n"
+            f"Changelog:\n{changelog[:500]}...\n\n"
+            f"Vuoi aggiornare ora?\n"
+            f"(L'applicazione verrà riavviata)",
+            icon='info'
+        )
+        
+        if response:
+            self._download_and_apply_update()
+    
+    def _download_and_apply_update(self):
+        """Scarica e applica l'aggiornamento"""
+        self._log("Scaricamento aggiornamento in corso...")
+        self.status_var.set("Scaricamento aggiornamento...")
+        
+        def download_thread():
+            try:
+                # Progress callback
+                def progress(downloaded, total):
+                    if total > 0:
+                        percent = int((downloaded / total) * 100)
+                        self.root.after(0, lambda p=percent: self.status_var.set(f"Download: {p}%"))
+                
+                # Scarica
+                update_path = self.updater.download_update(progress_callback=progress)
+                
+                if update_path:
+                    self.root.after(0, lambda: self._apply_update(update_path))
+                else:
+                    self.root.after(0, lambda: self._update_failed("Download fallito"))
+                    
+            except Exception as e:
+                self.root.after(0, lambda: self._update_failed(str(e)))
+        
+        threading.Thread(target=download_thread, daemon=True).start()
+    
+    def _apply_update(self, update_path):
+        """Applica l'aggiornamento scaricato"""
+        self._log(f"Applicazione aggiornamento da {update_path}...")
+        
+        response = messagebox.askyesno(
+            "Applicare Aggiornamento",
+            "L'aggiornamento è stato scaricato.\n"
+            "L'applicazione verrà chiusa e riavviata.\n\n"
+            "Continuare?",
+            icon='question'
+        )
+        
+        if response:
+            # Disconnetti prima dell'aggiornamento
+            if self.client:
+                self.client.disconnect()
+            
+            # Applica update
+            if self.updater.apply_update(update_path):
+                self._log("Aggiornamento in corso, chiusura applicazione...")
+                self.root.after(1000, self.root.destroy)
+            else:
+                self._update_failed("Impossibile applicare l'aggiornamento")
+    
+    def _update_failed(self, error):
+        """Gestisce errore di aggiornamento"""
+        self._log(f"❌ Aggiornamento fallito: {error}")
+        self.status_var.set("Aggiornamento fallito")
+        messagebox.showerror("Errore Aggiornamento", f"Impossibile aggiornare:\n{error}")
+    
+    def check_update_manual(self):
+        """Controllo manuale degli aggiornamenti"""
+        self._log("Controllo aggiornamenti...")
+        self.status_var.set("Controllo aggiornamenti...")
+        
+        def check_thread():
+            update = self.updater.check_for_updates()
+            if update:
+                self.root.after(0, lambda: self._show_update_notification(
+                    update['version'], 
+                    update.get('changelog', '')
+                ))
+            else:
+                self.root.after(0, lambda: (
+                    self._log("✓ Nessun aggiornamento disponibile"),
+                    self.status_var.set(f"Versione {VERSION} è la più recente"),
+                    messagebox.showinfo("Aggiornamenti", f"Stai usando la versione più recente (v{VERSION})")
+                ))
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+    
     # === App Lifecycle ===
     
     def on_close(self):
         """Chiusura app"""
         self._save_config()
+        # Ferma l'auto-updater
+        if self.updater:
+            self.updater.stop_checking()
         if self.client:
             self.client.disconnect()
         self.root.destroy()
