@@ -1325,9 +1325,13 @@ function startSessionAfterPayment() {
         return;
     }
     
+    // Nascondi invoice section
+    document.getElementById('invoice-section').style.display = 'none';
+    
     // Mostra messaggio di attesa
     showLoadingOverlay('Connecting to node... Waiting for model to load.');
     
+    console.log('Emitting start_session for session:', currentSession);
     socket.emit('start_session', {session_id: currentSession});
 }
 
@@ -1598,7 +1602,7 @@ function connectSocket() {
     });
 
     socket.on('error', (data) => {
-        console.error('Socket error:', data);
+        console.error('Socket error received:', data);
         hideLoadingOverlay();
         removeLoadingIndicator();
         
@@ -1609,7 +1613,7 @@ function connectSocket() {
             streamingContent = '';
         }
         
-        showError(data.message);
+        showError(data.message || 'Unknown error');
         // Also add to chat if visible
         const chatSection = document.getElementById('chat-section');
         if (chatSection && chatSection.style.display !== 'none') {
