@@ -110,7 +110,7 @@ class NodeStats(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     node = db.relationship('Node', backref=db.backref('stats', uselist=False))
-    owner = db.relationship('User', backref=db.backref('owned_nodes', lazy='dynamic'))
+    owner = db.relationship('User', backref=db.backref('owned_node_stats', lazy='dynamic'))
 
     def to_dict(self):
         """Converti in dizionario per API."""
