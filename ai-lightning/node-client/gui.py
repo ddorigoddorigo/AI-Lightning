@@ -1561,13 +1561,15 @@ class NodeGUI:
         
         # Get node_id from client
         node_id = getattr(self.client, 'node_id', None)
+        self.log(f"DEBUG: node_id = {node_id}")
+        
         if not node_id:
             messagebox.showwarning("Missing Node ID", 
                 "Node ID not available yet.\n\n"
                 "Please click 'Sync with Server' in the Models tab first to register your node.")
             return
         
-        self.update_status("Loading statistics...")
+        self.update_status(f"Loading statistics for node {node_id}...")
         
         def fetch_stats():
             try:
