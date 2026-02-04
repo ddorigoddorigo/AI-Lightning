@@ -1917,51 +1917,62 @@ async function loadWalletData() {
 async function loadWalletTransactions(page = 1) {
     walletTransactionsPage = page;
     
+    const list = document.getElementById('transactions-list');
+    const loading = document.getElementById('transactions-loading');
+    const pagination = document.getElementById('transactions-pagination');
+    
     try {
         const res = await fetch(`/api/wallet/transactions?page=${page}&per_page=10`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         
-        if (!res.ok) throw new Error('Failed to load transactions');
+        if (loading) loading.style.display = 'none';
+        
+        if (!res.ok) {
+            // Se errore server, mostra "no transactions" invece di errore
+            list.innerHTML = '<p class="no-data">📭 No transactions yet</p>';
+            if (pagination) pagination.innerHTML = '';
+            return;
+        }
         
         const data = await res.json();
         
-        const list = document.getElementById('transactions-list');
-        const loading = document.getElementById('transactions-loading');
-        
-        if (loading) loading.style.display = 'none';
-        
-        if (data.transactions.length === 0) {
-            list.innerHTML = '<p class="no-data">No transactions yet</p>';
+        if (!data.transactions || data.transactions.length === 0) {
+            list.innerHTML = '<p class="no-data">📭 No transactions yet</p>';
+            if (pagination) pagination.innerHTML = '';
             return;
         }
         
         list.innerHTML = data.transactions.map(tx => {
             const isPositive = tx.amount > 0;
-            const typeClass = tx.type.replace('_', '-');
-            const date = new Date(tx.created_at).toLocaleString();
+            const date = tx.created_at ? new Date(tx.created_at).toLocaleString() : '-';
             
             return `
                 <div class="transaction-item">
                     <div class="transaction-info">
-                        <div class="transaction-type ${tx.type}">${formatTxType(tx.type)}</div>
+                        <div class="transaction-type ${tx.type || 'unknown'}">${formatTxType(tx.type)}</div>
                         <div class="transaction-desc">${tx.description || '-'}</div>
                         <div class="transaction-date">${date}</div>
                     </div>
                     <div class="transaction-amount ${isPositive ? 'positive' : 'negative'}">
-                        ${isPositive ? '+' : ''}${tx.amount.toLocaleString()} sats
+                        ${isPositive ? '+' : ''}${(tx.amount || 0).toLocaleString()} sats
                     </div>
                 </div>
             `;
         }).join('');
         
         // Pagination
-        renderPagination(data.pages, page, 'transactions-pagination', loadWalletTransactions);
+        if (data.pages && data.pages > 1) {
+            renderPagination(data.pages, page, 'transactions-pagination', loadWalletTransactions);
+        } else if (pagination) {
+            pagination.innerHTML = '';
+        }
         
     } catch (error) {
         console.error('Error loading transactions:', error);
-        document.getElementById('transactions-list').innerHTML = 
-            '<p class="error">Error loading transactions</p>';
+        if (loading) loading.style.display = 'none';
+        list.innerHTML = '<p class="no-data">📭 No transactions yet</p>';
+        if (pagination) pagination.innerHTML = '';
     }
 }
 
