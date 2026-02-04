@@ -1274,27 +1274,38 @@ function startPaymentPolling() {
     // Ferma polling precedente se esiste
     stopPaymentPolling();
     
+    console.log('Starting payment polling for session:', currentSession);
+    
     // Controlla ogni 3 secondi
     paymentPollingInterval = setInterval(async () => {
         if (!currentSession) {
+            console.log('No currentSession, stopping polling');
             stopPaymentPolling();
             return;
         }
         
         try {
+            console.log('Polling payment status for session:', currentSession);
             const response = await fetch(`/api/session/${currentSession}/check_payment`, {
                 headers: { 'Authorization': `Bearer ${authToken}` }
             });
             
+            console.log('Payment check response status:', response.status);
+            
             if (response.ok) {
                 const data = await response.json();
+                console.log('Payment check result:', data);
                 
                 if (data.paid) {
                     // Pagamento ricevuto!
+                    console.log('Payment confirmed! Starting session...');
                     stopPaymentPolling();
                     showSuccess('Payment received!');
                     startSessionAfterPayment();
                 }
+            } else {
+                const errorText = await response.text();
+                console.error('Payment check failed:', response.status, errorText);
             }
         } catch (error) {
             console.error('Payment polling error:', error);
