@@ -171,7 +171,15 @@ def login():
 
     access_token = create_access_token(identity=str(user.id))
     logger.info(f"User {user.username} logged in, token created for id={user.id}")
-    return jsonify({'access_token': access_token})
+    return jsonify({
+        'token': access_token,
+        'access_token': access_token,  # Per compatibilità
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'balance': user.balance,
+        'is_admin': user.is_admin
+    })
 
 
 @app.route('/api/me', methods=['GET'])
