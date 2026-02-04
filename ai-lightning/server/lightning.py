@@ -224,8 +224,8 @@ class LightningManager:
             }
         
         try:
-            data = {'pay_req': payment_request}
-            response = self._request('GET', '/v1/payreq/' + payment_request)
+            # LND REST API: POST /v1/payreq/{pay_req}
+            response = self._request('GET', f'/v1/payreq/{payment_request}')
             return response
         except Exception as e:
             logger.error(f"Error decoding invoice: {e}")
