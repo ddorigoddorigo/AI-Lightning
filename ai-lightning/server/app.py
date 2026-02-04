@@ -1200,28 +1200,39 @@ def handle_disconnect():
 @socketio.on('start_session')
 def start_session(data):
     """Avvia una sessione dopo pagamento."""
+    logger.info(f"start_session called with data: {data}")
+    
     user_id = get_socket_user_id()
+    logger.info(f"start_session user_id: {user_id}")
+    
     if not user_id:
+        logger.warning("start_session: Authentication required")
         emit('error', {'message': 'Authentication required'})
         return
     session = Session.query.get(data['session_id'])
+    
+    logger.info(f"start_session: Found session: {session}, node_id: {session.node_id if session else 'None'}")
 
     # Validazioni
     if not session or session.user_id != user_id:
+        logger.warning(f"start_session: Invalid session - session={session}, session.user_id={session.user_id if session else 'None'}, user_id={user_id}")
         emit('error', {'message': 'Invalid session'})
         return
 
     if session.node_id != 'pending':
+        logger.warning(f"start_session: Session already started, node_id={session.node_id}")
         emit('error', {'message': 'Session already started'})
         return
 
     # In DEBUG mode, skip payment check for testing
     payment_verified = Config.DEBUG or get_lightning_manager().check_payment(session.payment_hash)
     if not payment_verified:
+        logger.warning("start_session: Payment not received")
         emit('error', {'message': 'Payment not received'})
         return
 
     if session.expired:
+        logger.warning("start_session: Session expired")
         emit('error', {'message': 'Session expired'})
         return
 

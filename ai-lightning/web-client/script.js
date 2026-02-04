@@ -1508,13 +1508,18 @@ function connectSocket() {
     });
 
     socket.on('connect', () => {
-        console.log('Connected to server');
+        console.log('Connected to server, socket id:', socket.id);
         if (currentSession) {
             socket.emit('resume_session', {session_id: currentSession});
         }
     });
+    
+    socket.on('disconnect', (reason) => {
+        console.log('Disconnected from server, reason:', reason);
+    });
 
     socket.on('session_started', (data) => {
+        console.log('session_started received:', data);
         hideLoadingOverlay();
         const expiresEl = document.getElementById('session-expires');
         if (expiresEl) {
