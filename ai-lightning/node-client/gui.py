@@ -1527,7 +1527,7 @@ class NodeGUI:
     
     def _load_stats(self):
         """Load statistics from server"""
-        if not self.client or not self.client.connected:
+        if not self.client or not self.client.is_connected():
             messagebox.showwarning("Not connected", "You must be connected to the server to load statistics.")
             return
         
