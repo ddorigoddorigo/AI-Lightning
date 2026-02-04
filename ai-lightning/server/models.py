@@ -151,13 +151,13 @@ class Transaction(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'type': self.type,
-            'amount': self.amount,
-            'fee': self.fee,
-            'balance_after': self.balance_after,
-            'status': self.status,
-            'description': self.description,
-            'created_at': self.created_at.isoformat(),
+            'type': self.type or 'unknown',
+            'amount': self.amount or 0,
+            'fee': self.fee or 0,
+            'balance_after': self.balance_after or 0,
+            'status': self.status or 'completed',
+            'description': self.description or '',
+            'created_at': self.created_at.isoformat() if self.created_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None
         }
 
