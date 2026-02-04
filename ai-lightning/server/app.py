@@ -504,6 +504,35 @@ def pay_session_from_wallet():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/session/<int:session_id>/check_payment', methods=['GET'])
+@jwt_required()
+def check_session_payment(session_id):
+    """Verifica se il pagamento Lightning per una sessione è stato ricevuto."""
+    try:
+        user_id = get_jwt_identity()
+        
+        session = Session.query.get(session_id)
+        if not session or session.user_id != int(user_id):
+            return jsonify({'error': 'Session not found'}), 404
+        
+        # Se già assegnato a un nodo, è già pagato
+        if session.node_id and session.node_id != 'pending':
+            return jsonify({'paid': True})
+        
+        # Verifica pagamento Lightning
+        payment_verified = get_lightning_manager().check_payment(session.payment_hash)
+        
+        if payment_verified:
+            logger.info(f"Payment verified for session {session_id}")
+            return jsonify({'paid': True})
+        
+        return jsonify({'paid': False})
+        
+    except Exception as e:
+        logger.error(f"Error checking session payment: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ============================================
 # Admin API
 # ============================================

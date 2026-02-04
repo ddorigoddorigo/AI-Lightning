@@ -20,6 +20,10 @@ let nodesRefreshInterval = null;
 // Session configuration
 let sessionContextLength = 4096;
 
+// Payment state
+let currentInvoiceAmount = 0;
+let paymentPollingInterval = null;
+
 // Wallet state
 let currentDepositHash = null;
 let depositCheckInterval = null;
@@ -1108,6 +1112,7 @@ async function createSession() {
 
         // IMPORTANTE: Salva session_id PRIMA di tutto il resto
         currentSession = data.session_id;
+        currentInvoiceAmount = data.amount;
         localStorage.setItem('sessionId', currentSession);
         console.log('Session created, currentSession:', currentSession);
 
@@ -1115,7 +1120,19 @@ async function createSession() {
         document.getElementById('session-config').style.display = 'none';
         document.getElementById('invoice-section').style.display = 'block';
         document.getElementById('invoice').textContent = data.invoice;
-        document.getElementById('invoice-amount').textContent = data.amount;
+        document.getElementById('invoice-amount').textContent = data.amount.toLocaleString();
+        
+        // Mostra opzione wallet se ha saldo sufficiente
+        const walletOption = document.getElementById('wallet-payment-option');
+        const walletBalanceEl = document.getElementById('payment-wallet-balance');
+        const currentBalance = parseInt(document.getElementById('balance-amount')?.textContent?.replace(/,/g, '') || '0');
+        
+        if (currentBalance >= data.amount) {
+            walletOption.style.display = 'block';
+            walletBalanceEl.textContent = currentBalance.toLocaleString();
+        } else {
+            walletOption.style.display = 'none';
+        }
         
         // Genera QR code (può fallire senza bloccare)
         try {
@@ -1123,6 +1140,9 @@ async function createSession() {
         } catch (qrError) {
             console.error('QR code generation failed:', qrError);
         }
+        
+        // Avvia polling automatico per verificare pagamento
+        startPaymentPolling();
         
     } catch (error) {
         showError(error.message);
@@ -1170,6 +1190,117 @@ function copyInvoice() {
     }).catch(() => {
         showError('Failed to copy');
     });
+}
+
+// ===========================================
+// Payment Functions
+// ===========================================
+
+// Paga dal wallet interno
+async function payFromWallet() {
+    if (!currentSession) {
+        showError('No active session');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/wallet/pay_session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ session_id: currentSession })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            if (data.error === 'Insufficient balance') {
+                showError(`Insufficient balance. Required: ${data.required} sats, Available: ${data.available} sats`);
+            } else {
+                throw new Error(data.error || 'Payment failed');
+            }
+            return;
+        }
+        
+        // Pagamento riuscito!
+        showSuccess(`Paid ${data.amount_paid.toLocaleString()} sats from wallet`);
+        
+        // Aggiorna balance display
+        updateBalanceDisplay(data.new_balance);
+        
+        // Ferma polling
+        stopPaymentPolling();
+        
+        // Avvia sessione
+        startSessionAfterPayment();
+        
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+// Avvia polling per verificare pagamento Lightning
+function startPaymentPolling() {
+    // Ferma polling precedente se esiste
+    stopPaymentPolling();
+    
+    // Controlla ogni 3 secondi
+    paymentPollingInterval = setInterval(async () => {
+        if (!currentSession) {
+            stopPaymentPolling();
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/session/${currentSession}/check_payment`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.paid) {
+                    // Pagamento ricevuto!
+                    stopPaymentPolling();
+                    showSuccess('Payment received!');
+                    startSessionAfterPayment();
+                }
+            }
+        } catch (error) {
+            console.error('Payment polling error:', error);
+        }
+    }, 3000);
+}
+
+function stopPaymentPolling() {
+    if (paymentPollingInterval) {
+        clearInterval(paymentPollingInterval);
+        paymentPollingInterval = null;
+    }
+}
+
+// Avvia sessione dopo pagamento confermato
+function startSessionAfterPayment() {
+    console.log('Starting session after payment, currentSession:', currentSession);
+    
+    if (!currentSession) {
+        showError('No active session');
+        return;
+    }
+    
+    if (!socket || !socket.connected) {
+        showError('Not connected to server. Reconnecting...');
+        connectSocket();
+        setTimeout(startSessionAfterPayment, 1000);
+        return;
+    }
+    
+    // Mostra messaggio di attesa
+    showLoadingOverlay('Connecting to node... Waiting for model to load.');
+    
+    socket.emit('start_session', {session_id: currentSession});
 }
 
 function checkPayment() {
@@ -1259,7 +1390,11 @@ function skipLoading() {
 }
 
 function cancelPayment() {
+    // Ferma polling
+    stopPaymentPolling();
+    
     currentSession = null;
+    currentInvoiceAmount = 0;
     localStorage.removeItem('sessionId');
     document.getElementById('invoice-section').style.display = 'none';
     document.getElementById('session-config').style.display = 'block';

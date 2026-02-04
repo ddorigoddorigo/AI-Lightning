@@ -1018,6 +1018,44 @@ button:disabled {
     display: block;
 }
 
+/* Wallet Payment Option */
+.wallet-pay-box {
+    background: linear-gradient(135deg, var(--surface-light), var(--surface));
+    border: 2px solid var(--primary);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.wallet-pay-box p {
+    margin: 10px 0;
+}
+
+.wallet-pay-box .btn-large {
+    padding: 15px 40px;
+    font-size: 1.2em;
+    margin: 15px 0;
+}
+
+.or-divider {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-top: 15px !important;
+}
+
+.payment-auto-check {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9em;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
 #invoice-container {
     position: relative;
     margin: 20px 0;
