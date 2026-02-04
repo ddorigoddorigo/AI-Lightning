@@ -16,6 +16,7 @@ let availableModels = [];
 let onlineNodes = [];
 let isWaitingForResponse = false;
 let nodesRefreshInterval = null;
+let modelsRefreshInterval = null;
 
 // Session configuration
 let sessionContextLength = 4096;

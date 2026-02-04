@@ -38,7 +38,7 @@ class Session(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     node_id = db.Column(db.String(64), nullable=False)
-    model = db.Column(db.String(20), nullable=False)
+    model = db.Column(db.String(256), nullable=False)  # Increased to support HuggingFace repo names
     payment_hash = db.Column(db.String(64), unique=True, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)
     active = db.Column(db.Boolean, default=True)
