@@ -139,6 +139,7 @@ def register():
     # Validazione input
     username = data['username'].strip()
     password = data['password']
+    email = data.get('email', '').strip() or None  # Email opzionale
     
     if len(username) < 3 or len(username) > 80:
         return jsonify({'error': 'Username must be 3-80 characters'}), 400
@@ -151,13 +152,17 @@ def register():
     
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username already taken'}), 400
+    
+    # Verifica email se fornita
+    if email and User.query.filter_by(email=email).first():
+        return jsonify({'error': 'Email already registered'}), 400
 
-    user = User(username=username)
+    user = User(username=username, email=email)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
 
-    return jsonify({'message': 'Registered successfully'})
+    return jsonify({'message': 'Registered successfully'}), 201
 
 @app.route('/api/login', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=60)  # 10 login/minuto per IP
