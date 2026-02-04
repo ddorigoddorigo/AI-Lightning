@@ -1340,6 +1340,9 @@ def start_session(data):
                         logger.info(f"Credited {commission} sats commission to admin (user #{admin_user.id})")
                     
                     db.session.commit()
+                    
+                    # Update node stats with earnings
+                    update_node_stats_internal(ws_node_id, add_earned=node_payment)
             
             # Get context and hf_repo from model registered by node
             context = 4096  # Default
