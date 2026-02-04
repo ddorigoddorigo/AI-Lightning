@@ -66,8 +66,8 @@ class Config:
     JWT_HEADER_NAME = 'Authorization'
     JWT_HEADER_TYPE = 'Bearer'
     
-    # Email configuration
-    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'mail.lightphon.com')
+    # Email configuration (One.com SMTP)
+    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'send.one.com')
     SMTP_PORT = int(os.environ.get('SMTP_PORT', 465))
     SMTP_USER = os.environ.get('SMTP_USER', 'noreply@lightphon.com')
     SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
