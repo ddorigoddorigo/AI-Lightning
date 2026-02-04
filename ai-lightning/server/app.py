@@ -1943,11 +1943,39 @@ def handle_node_register(data):
     owner_str = f", owner: user#{owner_user_id}" if owner_user_id else ""
     logger.info(f"Node {node_id} ({node_name}) registered via WebSocket - {len(models)} models, {gpu_count} GPUs, {total_vram}MB VRAM{owner_str}")
     
+    # Clear offline alert cooldown since node is now online
+    from utils.email_service import clear_alert_cooldown
+    clear_alert_cooldown(node_id, 'offline')
+    
     emit('node_registered', {
         'node_id': node_id,
         'token': token,
         'owner_user_id': owner_user_id  # Return to client
     })
+    
+    # Check disk space and send alert if critical
+    if hardware and owner_user_id:
+        disk_info = hardware.get('disk', {})
+        disk_percent = disk_info.get('percent_used', 0)
+        disk_free_gb = disk_info.get('free_gb', 100)
+        
+        if disk_percent >= Config.DISK_CRITICAL_PERCENT:
+            # Get owner's email
+            owner = User.query.get(owner_user_id)
+            if owner and owner.email:
+                from utils.email_service import send_disk_full_alert
+                send_disk_full_alert(
+                    user_email=owner.email,
+                    node_id=node_id,
+                    node_name=node_name or node_id,
+                    disk_percent=disk_percent,
+                    disk_free_gb=disk_free_gb
+                )
+                logger.warning(f"Disk critical alert sent for node {node_id}: {disk_percent}% used")
+        else:
+            # Clear disk alert cooldown if disk is now OK
+            from utils.email_service import clear_alert_cooldown
+            clear_alert_cooldown(node_id, 'disk')
 
 
 @socketio.on('disconnect')
@@ -1956,6 +1984,9 @@ def handle_disconnect():
     # Remove node from map if it was connected
     for node_id, info in list(connected_nodes.items()):
         if info['sid'] == request.sid:
+            node_name = info.get('name', node_id)
+            owner_user_id = info.get('owner_user_id')
+            
             del connected_nodes[node_id]
             
             # Mark node offline
@@ -1963,6 +1994,22 @@ def handle_disconnect():
             nm.redis.hset(f"node:{node_id}", 'status', 'offline')
             
             logger.info(f"Node {node_id} disconnected")
+            
+            # Send offline notification email to owner
+            if owner_user_id:
+                try:
+                    owner = User.query.get(owner_user_id)
+                    if owner and owner.email:
+                        from utils.email_service import send_node_offline_alert
+                        send_node_offline_alert(
+                            user_email=owner.email,
+                            node_id=node_id,
+                            node_name=node_name
+                        )
+                        logger.info(f"Offline alert email sent to {owner.email} for node {node_id}")
+                except Exception as e:
+                    logger.error(f"Failed to send offline alert for node {node_id}: {e}")
+            
             break
     
     if Config.DEBUG:

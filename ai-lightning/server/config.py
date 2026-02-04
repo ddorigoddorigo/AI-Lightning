@@ -65,3 +65,14 @@ class Config:
     JWT_TOKEN_LOCATION = ['headers']
     JWT_HEADER_NAME = 'Authorization'
     JWT_HEADER_TYPE = 'Bearer'
+    
+    # Email configuration
+    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'mail.lightphon.com')
+    SMTP_PORT = int(os.environ.get('SMTP_PORT', 465))
+    SMTP_USER = os.environ.get('SMTP_USER', 'noreply@lightphon.com')
+    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+    SMTP_FROM = os.environ.get('SMTP_FROM', 'noreply@lightphon.com')
+    SMTP_USE_SSL = os.environ.get('SMTP_USE_SSL', 'true').lower() == 'true'
+    
+    # Alert thresholds
+    DISK_CRITICAL_PERCENT = int(os.environ.get('DISK_CRITICAL_PERCENT', 90))  # Send email when disk > 90%
