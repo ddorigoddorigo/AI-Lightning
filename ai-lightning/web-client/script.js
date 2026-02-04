@@ -2410,7 +2410,72 @@ function copyDepositInvoice() {
 }
 
 function showWithdrawModal() {
-    showError('Withdrawals coming soon!');
+    // Update available balance
+    document.getElementById('withdraw-available').textContent = userBalance.toLocaleString();
+    
+    // Reset form
+    document.getElementById('withdraw-form').style.display = 'block';
+    document.getElementById('withdraw-result').style.display = 'none';
+    document.getElementById('withdraw-invoice').value = '';
+    document.getElementById('withdraw-btn').disabled = false;
+    document.getElementById('withdraw-btn').textContent = '📤 Withdraw';
+    
+    document.getElementById('withdraw-modal').style.display = 'flex';
+}
+
+async function processWithdraw() {
+    const invoice = document.getElementById('withdraw-invoice').value.trim();
+    
+    if (!invoice) {
+        showError('Please paste a Lightning invoice');
+        return;
+    }
+    
+    if (!invoice.toLowerCase().startsWith('ln')) {
+        showError('Invalid Lightning invoice format');
+        return;
+    }
+    
+    // Disable button and show loading
+    const btn = document.getElementById('withdraw-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Processing...';
+    
+    try {
+        const res = await fetch('/api/wallet/withdraw', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ invoice })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            // Show success
+            document.getElementById('withdraw-form').style.display = 'none';
+            document.getElementById('withdraw-result').style.display = 'block';
+            document.getElementById('withdraw-amount-sent').textContent = data.amount.toLocaleString();
+            document.getElementById('withdraw-new-balance').textContent = data.new_balance.toLocaleString();
+            
+            // Update global balance
+            userBalance = data.new_balance;
+            updateBalanceDisplay();
+            
+            showSuccess(`Withdrawal successful! ${data.amount} sats sent`);
+        } else {
+            showError(data.error || 'Withdrawal failed');
+            btn.disabled = false;
+            btn.textContent = '📤 Withdraw';
+        }
+    } catch (err) {
+        console.error('Withdrawal error:', err);
+        showError('Network error, please try again');
+        btn.disabled = false;
+        btn.textContent = '📤 Withdraw';
+    }
 }
 
 // ===========================================

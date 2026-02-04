@@ -2119,6 +2119,95 @@ button:disabled {
     text-align: center;
 }
 
+/* Withdraw Modal */
+#withdraw-modal .modal-content {
+    max-width: 500px;
+    width: 95%;
+    margin: auto;
+}
+
+#withdraw-modal .modal-body {
+    padding: 20px;
+}
+
+.withdraw-balance {
+    text-align: center;
+    font-size: 1.1em;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--surface-light);
+    border-radius: var(--border-radius);
+}
+
+.withdraw-balance strong {
+    color: var(--primary);
+}
+
+.withdraw-input {
+    margin-bottom: 15px;
+}
+
+.withdraw-input label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.withdraw-input textarea {
+    width: 100%;
+    padding: 12px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+    color: var(--text);
+    font-family: 'Consolas', monospace;
+    font-size: 0.85em;
+    resize: vertical;
+}
+
+.withdraw-input textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.withdraw-note {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+#withdraw-form .btn-primary {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1em;
+}
+
+.withdraw-success {
+    text-align: center;
+    padding: 30px 20px;
+}
+
+.withdraw-success .success-icon {
+    font-size: 48px;
+    display: block;
+    margin-bottom: 15px;
+}
+
+.withdraw-success h4 {
+    color: var(--success);
+    margin-bottom: 15px;
+}
+
+.withdraw-success p {
+    margin: 10px 0;
+}
+
+#withdraw-result .btn-secondary {
+    width: 100%;
+    margin-top: 20px;
+}
+
 .deposit-amount-display {
     text-align: center;
     font-size: 1.2em;

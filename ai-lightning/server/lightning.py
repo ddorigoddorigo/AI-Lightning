@@ -203,6 +203,34 @@ class LightningManager:
             logger.error(f"Error getting invoice amount: {e}")
             return None
     
+    def decode_invoice(self, payment_request):
+        """
+        Decode a BOLT11 Lightning invoice.
+        
+        Args:
+            payment_request: BOLT11 invoice string
+            
+        Returns:
+            dict: Decoded invoice info including num_satoshis, description, etc.
+        """
+        if self._test_mode:
+            # In test mode, extract amount from invoice if possible, or use default
+            # Simple parsing for test invoices
+            return {
+                'num_satoshis': '10000',
+                'description': 'Test withdrawal',
+                'destination': 'test_pubkey',
+                'payment_hash': hashlib.sha256(payment_request.encode()).hexdigest()
+            }
+        
+        try:
+            data = {'pay_req': payment_request}
+            response = self._request('GET', '/v1/payreq/' + payment_request)
+            return response
+        except Exception as e:
+            logger.error(f"Error decoding invoice: {e}")
+            raise
+    
     def pay_invoice(self, payment_request):
         """
         Pay a Lightning invoice.

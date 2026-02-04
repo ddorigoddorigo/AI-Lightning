@@ -362,7 +362,7 @@
 
                     <div class="wallet-actions">
                         <button onclick="showDepositModal()" class="btn-primary">⚡ Deposit</button>
-                        <button onclick="showWithdrawModal()" class="btn-secondary" disabled title="Coming soon">📤 Withdraw</button>
+                        <button onclick="showWithdrawModal()" class="btn-secondary">📤 Withdraw</button>
                     </div>
 
                     <div class="wallet-transactions">
@@ -470,6 +470,35 @@
                             <span id="deposit-status-text">⏳ Waiting for payment...</span>
                         </div>
                         <button onclick="checkDepositManual()" class="btn-secondary">Check Payment</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Withdraw Modal -->
+        <div id="withdraw-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close" onclick="closeModal('withdraw-modal')">&times;</span>
+                <h3>📤 Withdraw Bitcoin</h3>
+                <div class="modal-body">
+                    <div id="withdraw-form">
+                        <p class="withdraw-balance">Available balance: <strong id="withdraw-available">0</strong> sats</p>
+                        <div class="withdraw-input">
+                            <label>Paste your Lightning Invoice:</label>
+                            <textarea id="withdraw-invoice" placeholder="lnbc..." rows="4"></textarea>
+                        </div>
+                        <p class="withdraw-note">⚠️ Minimum withdrawal: 1,000 sats</p>
+                        <button onclick="processWithdraw()" class="btn-primary" id="withdraw-btn">📤 Withdraw</button>
+                    </div>
+                    
+                    <div id="withdraw-result" style="display: none;">
+                        <div class="withdraw-success">
+                            <span class="success-icon">✅</span>
+                            <h4>Withdrawal Successful!</h4>
+                            <p>Amount: <strong id="withdraw-amount-sent">0</strong> sats</p>
+                            <p>New balance: <strong id="withdraw-new-balance">0</strong> sats</p>
+                        </div>
+                        <button onclick="closeModal('withdraw-modal')" class="btn-secondary">Close</button>
                     </div>
                 </div>
             </div>

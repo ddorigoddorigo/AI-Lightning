@@ -434,6 +434,99 @@ def get_wallet_transactions():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/wallet/withdraw', methods=['POST'])
+@jwt_required()
+@rate_limit(max_requests=5, window_seconds=60)
+def withdraw_to_lightning():
+    """Withdraw funds from wallet to a Lightning invoice."""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(int(user_id))
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        invoice = data.get('invoice', '').strip()
+        
+        if not invoice:
+            return jsonify({'error': 'Lightning invoice required'}), 400
+        
+        # Validate invoice format (basic check)
+        if not invoice.lower().startswith('ln'):
+            return jsonify({'error': 'Invalid Lightning invoice format'}), 400
+        
+        # Decode invoice to get amount
+        lm = get_lightning_manager()
+        
+        try:
+            decoded = lm.decode_invoice(invoice)
+            amount = decoded.get('num_satoshis') or decoded.get('amount')
+            if amount:
+                amount = int(amount)
+            else:
+                return jsonify({'error': 'Could not decode invoice amount'}), 400
+        except Exception as e:
+            logger.error(f"Error decoding invoice: {e}")
+            return jsonify({'error': 'Failed to decode invoice'}), 400
+        
+        # Validation
+        if amount < 1000:
+            return jsonify({'error': 'Minimum withdrawal is 1000 sats'}), 400
+        
+        # Check balance (include small fee buffer for routing)
+        routing_fee_buffer = max(10, int(amount * 0.01))  # 1% or min 10 sats
+        total_needed = amount + routing_fee_buffer
+        
+        if user.balance < amount:
+            return jsonify({
+                'error': 'Insufficient balance',
+                'required': amount,
+                'available': user.balance
+            }), 400
+        
+        # Pay the invoice
+        result = lm.pay_invoice(invoice)
+        
+        if not result.get('success'):
+            error_msg = result.get('error', 'Payment failed')
+            logger.error(f"Withdrawal failed for user {user_id}: {error_msg}")
+            return jsonify({'error': f'Payment failed: {error_msg}'}), 400
+        
+        # Deduct from balance
+        user.balance -= amount
+        
+        # Record transaction
+        from models import Transaction
+        tx = Transaction(
+            type='withdrawal',
+            user_id=user.id,
+            amount=-amount,
+            fee=0,
+            balance_after=user.balance,
+            status='completed',
+            description=f'Withdrawal to Lightning invoice',
+            reference_id=result.get('preimage', '')[:64] if result.get('preimage') else None,
+            completed_at=datetime.utcnow()
+        )
+        db.session.add(tx)
+        db.session.commit()
+        
+        logger.info(f"Withdrawal completed: {amount} sats for user {user.username}")
+        
+        return jsonify({
+            'success': True,
+            'amount': amount,
+            'new_balance': user.balance,
+            'preimage': result.get('preimage', '')
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing withdrawal: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/wallet/pay_session', methods=['POST'])
 @jwt_required()
 def pay_session_from_wallet():
