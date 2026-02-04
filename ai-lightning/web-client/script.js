@@ -1178,27 +1178,28 @@ async function createSession() {
 
 // Genera QR code per l'invoice Lightning
 function generateQRCode(invoice) {
-    const canvas = document.getElementById('qr-code');
+    const qrContainer = document.getElementById('qr-code');
+    
+    // Pulisci QR precedente
+    qrContainer.innerHTML = '';
     
     // Usa il prefisso lightning: per compatibilità con i wallet
     const lightningUri = `lightning:${invoice.toUpperCase()}`;
     
-    // Opzioni QR code
-    QRCode.toCanvas(canvas, lightningUri, {
-        width: 280,
-        margin: 2,
-        color: {
-            dark: '#1a1a2e',  // Colore scuro (sfondo del tema)
-            light: '#ffffff'  // Sfondo bianco per leggibilità
-        },
-        errorCorrectionLevel: 'M'
-    }, function(error) {
-        if (error) {
-            console.error('QR Code generation error:', error);
-            // Fallback: nascondi QR se fallisce
-            document.getElementById('qr-container').style.display = 'none';
-        }
-    });
+    try {
+        // qrcodejs usa il costruttore new QRCode(element, options)
+        new QRCode(qrContainer, {
+            text: lightningUri,
+            width: 280,
+            height: 280,
+            colorDark: '#1a1a2e',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    } catch (error) {
+        console.error('QR Code generation error:', error);
+        qrContainer.style.display = 'none';
+    }
 }
 
 // Apri invoice nel wallet Lightning
