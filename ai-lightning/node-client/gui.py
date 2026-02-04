@@ -202,6 +202,31 @@ class NodeGUI:
         
         server_frame.columnconfigure(1, weight=1)
         
+        # Pricing settings
+        pricing_frame = ttk.LabelFrame(self.conn_frame, text="💰 Prezzo per Minuto", padding=10)
+        pricing_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(pricing_frame, text="Satoshi/minuto:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
+        self.price_per_minute = tk.StringVar(value="100")
+        price_spin = ttk.Spinbox(pricing_frame, textvariable=self.price_per_minute, from_=1, to=100000, width=15, font=('Arial', 12))
+        price_spin.grid(row=0, column=1, sticky='w', padx=10, pady=5)
+        ttk.Label(pricing_frame, text="sats", font=('Arial', 10, 'bold')).grid(row=0, column=2, sticky='w')
+        
+        # Suggerimenti prezzo
+        price_hints = ttk.Frame(pricing_frame)
+        price_hints.grid(row=1, column=0, columnspan=4, sticky='w', pady=10)
+        
+        ttk.Label(price_hints, text="Suggerimenti:", font=('Arial', 9, 'bold')).pack(side=tk.LEFT, padx=5)
+        ttk.Button(price_hints, text="50 sats (economico)", command=lambda: self.price_per_minute.set("50"), width=15).pack(side=tk.LEFT, padx=3)
+        ttk.Button(price_hints, text="100 sats (standard)", command=lambda: self.price_per_minute.set("100"), width=15).pack(side=tk.LEFT, padx=3)
+        ttk.Button(price_hints, text="500 sats (premium)", command=lambda: self.price_per_minute.set("500"), width=15).pack(side=tk.LEFT, padx=3)
+        ttk.Button(price_hints, text="1000 sats (high-end)", command=lambda: self.price_per_minute.set("1000"), width=15).pack(side=tk.LEFT, padx=3)
+        
+        ttk.Label(pricing_frame, text="⚡ Gli utenti pagheranno questo importo per ogni minuto di utilizzo del tuo nodo", 
+                  font=('Arial', 9), foreground='gray').grid(row=2, column=0, columnspan=4, sticky='w', pady=5)
+        
+        pricing_frame.columnconfigure(1, weight=1)
+        
         # Bottoni connessione
         btn_frame = ttk.Frame(self.conn_frame)
         btn_frame.pack(pady=20)
@@ -898,6 +923,7 @@ class NodeGUI:
             
             self.node_name.set(self.config.get('Node', 'name', fallback=''))
             self.token.set(self.config.get('Node', 'token', fallback=''))
+            self.price_per_minute.set(self.config.get('Node', 'price_per_minute', fallback='100'))
             # Supporta sia il nuovo 'command' che il vecchio 'bin'
             llama_cmd = self.config.get('LLM', 'command', fallback='')
             if not llama_cmd:
@@ -925,6 +951,7 @@ class NodeGUI:
         self.config['Server']['URL'] = "http://51.178.142.183:5000"
         self.config['Node']['name'] = self.node_name.get()
         self.config['Node']['token'] = self.token.get()
+        self.config['Node']['price_per_minute'] = self.price_per_minute.get()
         self.config['LLM']['command'] = self.llama_command.get()
         self.config['LLM']['gpu_layers'] = self.gpu_layers.get()
         self.config['Models']['directory'] = self.models_folder.get()

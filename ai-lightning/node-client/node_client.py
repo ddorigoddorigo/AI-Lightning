@@ -636,6 +636,7 @@ class NodeClient:
         self.server_url = self.config.get('Server', 'URL', fallback='http://localhost:5000')
         self.node_token = self.config.get('Node', 'token', fallback='')
         self.node_name = self.config.get('Node', 'name', fallback='')
+        self.price_per_minute = self.config.getint('Node', 'price_per_minute', fallback=100)
         
         # Lightning wallet per ricevere pagamenti
         self.lightning = NodeLightning(self.config)
@@ -688,6 +689,7 @@ class NodeClient:
                 'token': self.node_token,
                 'name': self.node_name,
                 'models': self.models if self.models else list(self.models_config.keys()),
+                'price_per_minute': self.price_per_minute,
             }
             
             # Aggiungi hardware info se disponibile

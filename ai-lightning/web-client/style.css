@@ -374,6 +374,28 @@ button:disabled {
     color: var(--error);
 }
 
+.node-price {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.15));
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+}
+
+.node-price-icon {
+    font-size: 1.2em;
+}
+
+.node-price-value {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--warning);
+}
+
 .node-specs {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -664,6 +686,16 @@ button:disabled {
 
 .config-row label {
     color: var(--text-muted);
+}
+
+/* Node Price Display in Session Config */
+.node-price-row .node-price-value {
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.15));
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    color: var(--warning);
 }
 
 /* Context Slider */

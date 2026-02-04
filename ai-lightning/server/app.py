@@ -905,6 +905,7 @@ def get_online_nodes():
             'models': models,  # Lista completa modelli
             'models_count': len(models),
             'status': 'busy' if is_busy else 'available',
+            'price_per_minute': info.get('price_per_minute', 100),  # Prezzo in satoshi/minuto
             'hardware': {
                 'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
                 'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
@@ -977,26 +978,27 @@ def new_session():
             if requested_node_id in connected_nodes:
                 info = connected_nodes[requested_node_id]
                 
+                # Ottieni il prezzo del nodo
+                node_price = info.get('price_per_minute', 100)
+                
                 # Se è un modello HuggingFace custom, accetta sempre (verrà scaricato)
                 if hf_repo:
                     node_with_model = requested_node_id
-                    model_price = None  # Default price
+                    model_price = node_price  # Usa il prezzo del nodo
                 else:
                     # Verifica che il nodo abbia il modello
                     node_models = info.get('models', [])
                     for model in node_models:
                         model_id = None
-                        found_price = None
                         
                         if isinstance(model, dict):
                             model_id = model.get('id') or model.get('name')
-                            found_price = model.get('price_per_minute')
                         else:
                             model_id = str(model)
                         
                         if model_id == model_requested:
                             node_with_model = requested_node_id
-                            model_price = found_price
+                            model_price = node_price  # Usa il prezzo del nodo
                             break
                     
                     if not node_with_model:
@@ -1009,20 +1011,19 @@ def new_session():
             # Nessun nodo specifico: cerca automaticamente
             for node_id, info in connected_nodes.items():
                 node_models = info.get('models', [])
+                node_price = info.get('price_per_minute', 100)  # Prezzo del nodo
                 
                 for model in node_models:
                     model_id = None
-                    found_price = None
                     
                     if isinstance(model, dict):
                         model_id = model.get('id') or model.get('name')
-                        found_price = model.get('price_per_minute')
                     else:
                         model_id = str(model)
                     
                     if model_id == model_requested:
                         node_with_model = node_id
-                        model_price = found_price
+                        model_price = node_price  # Usa il prezzo del nodo
                         break
                 
                 if node_with_model:
@@ -1690,6 +1691,7 @@ def handle_node_register(data):
     models = data.get('models', [])
     hardware = data.get('hardware', {})
     node_name = data.get('name', '')
+    price_per_minute = data.get('price_per_minute', 100)  # Default 100 sats/min
     
     # Genera o valida node_id
     node_id = None
@@ -1716,6 +1718,7 @@ def handle_node_register(data):
             'name': node_name or node_id,
             'models': json.dumps(models) if models else '[]',
             'hardware': json.dumps(hardware) if hardware else '{}',
+            'price_per_minute': price_per_minute,
             'status': 'online',
             'type': 'websocket',
             'last_ping': datetime.utcnow().timestamp(),
@@ -1728,6 +1731,7 @@ def handle_node_register(data):
         update_data = {
             'status': 'online',
             'last_ping': datetime.utcnow().timestamp(),
+            'price_per_minute': price_per_minute,
         }
         if models:
             update_data['models'] = json.dumps(models)
@@ -1742,7 +1746,8 @@ def handle_node_register(data):
         'sid': request.sid,
         'models': models,
         'hardware': hardware,
-        'name': node_name or node_id
+        'name': node_name or node_id,
+        'price_per_minute': price_per_minute
     }
     
     join_room(f"node_{node_id}")

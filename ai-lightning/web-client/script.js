@@ -475,6 +475,11 @@ function renderNodesGrid(nodes) {
                 <span class="node-status ${node.status}">${node.status}</span>
             </div>
             
+            <div class="node-price">
+                <span class="node-price-icon">⚡</span>
+                <span class="node-price-value">${node.price_per_minute || 100} sats/min</span>
+            </div>
+            
             <div class="node-specs">
                 <div class="node-spec"><span class="node-spec-icon">🎮</span> ${gpuName}</div>
                 <div class="node-spec"><span class="node-spec-icon">⚡</span> ${vramGb} GB VRAM</div>
@@ -832,6 +837,12 @@ function selectModel(model) {
     }
     document.getElementById('selected-model-name').textContent = modelDisplay;
     
+    // Mostra prezzo del nodo
+    const nodePriceSats = document.getElementById('node-price-sats');
+    if (nodePriceSats && selectedNode) {
+        nodePriceSats.textContent = selectedNode.price_per_minute || 100;
+    }
+    
     // Reset parametri LLM ai valori di default
     resetLLMParams();
     
@@ -1034,18 +1045,15 @@ function updateEstimatedCost() {
     if (!minutesEl || !costEl) return;
     
     const minutes = parseInt(minutesEl.value) || 5;
-    // Prezzo base: 10 sats/minuto, modelli più grandi costano di più
-    let basePrice = 10;
     
-    if (selectedModel) {
-        const params = selectedModel.parameters.toLowerCase();
-        if (params.includes('70b') || params.includes('72b')) basePrice = 100;
-        else if (params.includes('34b') || params.includes('32b')) basePrice = 50;
-        else if (params.includes('13b') || params.includes('14b')) basePrice = 30;
-        else if (params.includes('7b') || params.includes('8b')) basePrice = 20;
+    // Usa il prezzo del nodo selezionato
+    let pricePerMinute = 100; // default
+    
+    if (selectedNode && selectedNode.price_per_minute) {
+        pricePerMinute = selectedNode.price_per_minute;
     }
     
-    const cost = basePrice * minutes;
+    const cost = pricePerMinute * minutes;
     costEl.textContent = `~${cost} sats`;
 }
 
