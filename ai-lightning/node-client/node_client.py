@@ -883,7 +883,7 @@ class NodeClient:
             )
             
             # Notify that we are starting (may require download)
-            if use_hf:
+            if use_hf and self.sio.connected:
                 self.sio.emit('session_status', {
                     'session_id': session_id,
                     'status': 'downloading',
@@ -892,11 +892,15 @@ class NodeClient:
             
             def status_callback(status, msg):
                 """Callback for status updates during download/loading"""
-                self.sio.emit('session_status', {
-                    'session_id': session_id,
-                    'status': status,
-                    'message': msg
-                })
+                try:
+                    if self.sio.connected:
+                        self.sio.emit('session_status', {
+                            'session_id': session_id,
+                            'status': status,
+                            'message': msg
+                        })
+                except Exception as e:
+                    logger.warning(f"Failed to emit status update: {e}")
             
             if llama.start(download_callback=status_callback):
                 self.active_sessions[session_id] = llama
@@ -906,17 +910,26 @@ class NodeClient:
                     self.model_manager.mark_model_used(model_id)
                     logger.info(f"Updated usage stats for model {model_id}")
                 
-                self.sio.emit('session_started', {
-                    'session_id': session_id,
-                    'node_id': self.node_id,
-                    'status': 'ready'
-                })
+                if self.sio.connected:
+                    self.sio.emit('session_started', {
+                        'session_id': session_id,
+                        'node_id': self.node_id,
+                        'status': 'ready'
+                    })
+                else:
+                    logger.warning(f"Cannot emit session_started: socket disconnected")
+                    # Clean up the session since we can't notify the server
+                    llama.stop()
+                    del self.active_sessions[session_id]
             else:
-                self.sio.emit('session_error', {
-                    'session_id': session_id,
-                    'node_id': self.node_id,
-                    'error': 'Failed to start llama-server (check logs for details)'
-                })
+                if self.sio.connected:
+                    self.sio.emit('session_error', {
+                        'session_id': session_id,
+                        'node_id': self.node_id,
+                        'error': 'Failed to start llama-server (check logs for details)'
+                    })
+                else:
+                    logger.warning(f"Cannot emit session_error: socket disconnected")
         
         @self.sio.on('stop_session')
         def on_stop_session(data):
