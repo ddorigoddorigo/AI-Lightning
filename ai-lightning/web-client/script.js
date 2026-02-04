@@ -659,33 +659,6 @@ async function loadModels() {
     // Altrimenti carica nodi
     loadNodes();
 }
-    const grid = document.getElementById('models-grid');
-    const loading = document.getElementById('models-loading');
-    
-    if (loading) loading.style.display = 'block';
-    if (grid) grid.innerHTML = '';
-    
-    try {
-        const response = await fetch('/api/models/available');
-        const data = await response.json();
-        
-        availableModels = data.models || [];
-        const busyModels = data.busy_models || [];
-        
-        if (loading) loading.style.display = 'none';
-        
-        if (availableModels.length === 0 && busyModels.length === 0) {
-            if (grid) grid.innerHTML = '<div class="no-models">No models available. Waiting for nodes to connect...</div>';
-            return;
-        }
-        
-        renderModelsGrid(availableModels, busyModels);
-        
-    } catch (error) {
-        if (loading) loading.style.display = 'none';
-        if (grid) grid.innerHTML = '<div class="error">Failed to load models. <a href="#" onclick="loadModels()">Retry</a></div>';
-    }
-}
 
 function formatTimeRemaining(seconds) {
     if (seconds <= 0) return 'Available soon';
