@@ -1164,29 +1164,34 @@ def register_node():
 def handle_connect(auth=None):
     """Gestione connessione WebSocket."""
     sid = request.sid
+    logger.info(f"Socket connect: sid={sid}, auth={auth}")
     
     # Try to get token from auth parameter
     token = None
     if auth and 'token' in auth:
         token = auth['token']
+        logger.info(f"Token from auth: {token[:20] if token else 'None'}...")
     
     # Try to get from query params
     if not token:
         token = request.args.get('token')
+        if token:
+            logger.info(f"Token from query: {token[:20]}...")
     
     if token:
         try:
             decoded = decode_token(token)
             user_id = decoded.get('sub')
+            logger.info(f"Decoded token for sid {sid}: user_id={user_id}")
             if user_id:
                 socket_users[sid] = int(user_id) if isinstance(user_id, str) else user_id
-                if Config.DEBUG:
-                    current_app.logger.info(f'Client {sid} authenticated as user {user_id}')
+                logger.info(f'Client {sid} authenticated as user {user_id}')
         except Exception as e:
-            current_app.logger.warning(f'Failed to decode token for {sid}: {e}')
+            logger.warning(f'Failed to decode token for {sid}: {e}')
+    else:
+        logger.warning(f"No token provided for socket {sid}")
     
-    if Config.DEBUG:
-        current_app.logger.info(f'Client connected: {sid}')
+    logger.info(f'Client connected: {sid}, authenticated: {sid in socket_users}')
 
 @socketio.on('disconnect')
 def handle_disconnect():
