@@ -484,7 +484,7 @@ function renderNodesGrid(nodes) {
                 <div class="node-spec"><span class="node-spec-icon">🎮</span> ${gpuName}</div>
                 <div class="node-spec"><span class="node-spec-icon">⚡</span> ${vramGb} GB VRAM</div>
                 <div class="node-spec"><span class="node-spec-icon">💾</span> ${ramStr}</div>
-                <div class="node-spec"><span class="node-spec-icon">🧠</span> ${hw.cpu_cores || '?'} cores</div>
+                <div class="node-spec"><span class="node-spec-icon">🧠</span> ${hw.cpu_cores || '?'} threads</div>
             </div>
             
             <div class="node-disk-bar">
@@ -627,7 +627,7 @@ function loadHuggingFaceModel() {
         is_huggingface: true,
         parameters: 'Custom',
         quantization: hfRepo.includes(':') ? hfRepo.split(':')[1] : 'default',
-        context_length: 4096,
+        context_length: 100000,
         architecture: 'unknown'
     };
     
@@ -847,8 +847,8 @@ function selectModel(model) {
     resetLLMParams();
     
     // Imposta context length dal modello (o default 4096)
-    const modelContext = model.context_length || 4096;
-    sessionContextLength = Math.min(modelContext, 32768);
+    const modelContext = model.context_length || 100000;
+    sessionContextLength = Math.min(modelContext, 100000);
     
     // Aggiorna slider context
     const contextSlider = document.getElementById('context-slider');
@@ -1070,6 +1070,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // Session Management
 // ===========================================
 async function createSession() {
+    console.log('createSession called');
+    console.log('selectedModel:', selectedModel);
+    console.log('selectedNode:', selectedNode);
+    
     if (!selectedModel) {
         showError('Please select a model first');
         return;
@@ -1081,6 +1085,8 @@ async function createSession() {
     }
     
     const minutes = parseInt(document.getElementById('minutes').value);
+    console.log('minutes:', minutes);
+    
     if (minutes < 1 || minutes > 120) {
         showError('Duration must be between 1 and 120 minutes');
         return;
