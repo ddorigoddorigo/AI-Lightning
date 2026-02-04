@@ -134,10 +134,59 @@ class Transaction(db.Model):
     __tablename__ = 'transactions'
 
     id = db.Column(db.Integer, primary_key=True)
-    type = db.Column(db.String(20), nullable=False)  # 'deposit', 'withdrawal', 'fee', 'payment'
+    type = db.Column(db.String(20), nullable=False)  # 'deposit', 'withdrawal', 'session_payment', 'node_earning', 'commission'
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    amount = db.Column(db.Integer, nullable=False)  # In satoshis
+    amount = db.Column(db.Integer, nullable=False)  # In satoshis (positivo = entrata, negativo = uscita)
+    fee = db.Column(db.Integer, default=0)  # Commissione applicata
+    balance_after = db.Column(db.Integer, default=0)  # Saldo dopo transazione
+    payment_hash = db.Column(db.String(64), nullable=True)  # Hash pagamento Lightning
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'completed', 'failed', 'expired'
     description = db.Column(db.String(200))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    reference_id = db.Column(db.String(64), nullable=True)  # ID sessione o altro riferimento
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
-    user = db.relationship('User')
+    user = db.relationship('User', backref='transactions')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type': self.type,
+            'amount': self.amount,
+            'fee': self.fee,
+            'balance_after': self.balance_after,
+            'status': self.status,
+            'description': self.description,
+            'created_at': self.created_at.isoformat(),
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+        }
+
+
+class DepositInvoice(db.Model):
+    """Invoice per deposito sul wallet."""
+    __tablename__ = 'deposit_invoices'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    payment_hash = db.Column(db.String(64), unique=True, nullable=False)
+    payment_request = db.Column(db.Text, nullable=False)  # Invoice BOLT11
+    amount = db.Column(db.Integer, nullable=False)  # Satoshis
+    status = db.Column(db.String(20), default='pending')  # 'pending', 'paid', 'expired'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    paid_at = db.Column(db.DateTime, nullable=True)
+    
+    user = db.relationship('User', backref='deposit_invoices')
+
+
+class PlatformStats(db.Model):
+    """Statistiche della piattaforma (singleton)."""
+    __tablename__ = 'platform_stats'
+    
+    id = db.Column(db.Integer, primary_key=True, default=1)
+    total_commissions = db.Column(db.Integer, default=0)  # Commissioni totali raccolte
+    total_sessions = db.Column(db.Integer, default=0)
+    total_users = db.Column(db.Integer, default=0)
+    total_nodes = db.Column(db.Integer, default=0)
+    total_volume = db.Column(db.Integer, default=0)  # Volume totale transazioni
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -174,10 +174,34 @@ class LightningManager:
     def get_invoice(self, r_hash):
         """Recupera dettagli di una fattura."""
         if self._test_mode:
-            return {'state': 'SETTLED', 'r_hash': r_hash}
+            return {'state': 'SETTLED', 'r_hash': r_hash, 'value': '10000'}
         r_hash_bytes = bytes.fromhex(r_hash)
         r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
         return self._request('GET', f'/v1/invoice/{r_hash_b64}')
+    
+    def get_invoice_amount(self, r_hash):
+        """
+        Recupera l'importo di una fattura.
+        
+        Args:
+            r_hash: Hash del pagamento (hex string)
+            
+        Returns:
+            int: Importo in satoshis, o None se non trovata
+        """
+        try:
+            if self._test_mode:
+                # In test mode, usa un valore di default
+                return 10000
+            
+            invoice = self.get_invoice(r_hash)
+            # value può essere stringa o int
+            value = invoice.get('value', invoice.get('amt_paid_sat', 0))
+            return int(value) if value else None
+            
+        except Exception as e:
+            logger.error(f"Error getting invoice amount: {e}")
+            return None
     
     def pay_invoice(self, payment_request):
         """

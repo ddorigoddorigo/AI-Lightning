@@ -3,6 +3,7 @@ Applicazione Flask principale.
 
 Gestisce autenticazione, API, WebSocket e logica business.
 """
+from functools import wraps
 from flask import Flask, render_template, request, jsonify, current_app
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_jwt_extended import (
@@ -10,11 +11,11 @@ from flask_jwt_extended import (
     decode_token
 )
 from config import Config
-from models import db, User, Session, Node, Transaction
+from models import db, User, Session, Node, Transaction, DepositInvoice, PlatformStats
 from lightning import LightningManager
 from nodemanager import NodeManager
 from utils.helpers import validate_model, get_model_price
-from utils.decorators import rate_limit, validate_json, validate_model_param, admin_required
+from utils.decorators import rate_limit, validate_json, validate_model_param
 from datetime import datetime, timedelta
 import httpx
 import click
@@ -245,6 +246,480 @@ def add_test_balance():
     except Exception as e:
         logger.error(f"Error adding test balance: {e}")
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/add_test_balance', methods=['POST'])
+@jwt_required()
+def add_test_balance():
+    """
+    Aggiunge balance di test (solo per development/testnet).
+    In produzione questo endpoint dovrebbe essere disabilitato o protetto.
+    """
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        amount = data.get('amount', 10000)  # Default 10000 sats
+        
+        # Limite per evitare abusi
+        if amount > 1000000:  # Max 1M sats per richiesta
+            amount = 1000000
+        
+        user.balance += amount
+        db.session.commit()
+        
+        logger.info(f"Added {amount} sats to user {user.username} (new balance: {user.balance})")
+        
+        return jsonify({
+            'message': f'Added {amount} sats to your balance',
+            'new_balance': user.balance
+        })
+    except Exception as e:
+        logger.error(f"Error adding test balance: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================
+# Wallet API
+# ============================================
+
+PLATFORM_COMMISSION_RATE = 0.10  # 10% commissione
+
+@app.route('/api/wallet/balance', methods=['GET'])
+@jwt_required()
+def get_wallet_balance():
+    """Restituisce il saldo del wallet dell'utente."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    return jsonify({
+        'balance_sats': user.balance,
+        'balance_btc': user.balance / 100_000_000,
+        'balance_usd': user.balance * 0.0004  # Approssimativo, da aggiornare con rate reale
+    })
+
+
+@app.route('/api/wallet/deposit', methods=['POST'])
+@jwt_required()
+@rate_limit(max_requests=10, window_seconds=60)
+def create_deposit_invoice():
+    """Crea una invoice per depositare fondi nel wallet."""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(int(user_id))
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json() or {}
+        amount = data.get('amount', 10000)  # Default 10000 sats
+        
+        # Validazione
+        if amount < 1000:
+            return jsonify({'error': 'Minimum deposit is 1000 sats'}), 400
+        if amount > 10_000_000:
+            return jsonify({'error': 'Maximum deposit is 10,000,000 sats'}), 400
+        
+        # Crea invoice Lightning
+        invoice = get_lightning_manager().create_invoice(
+            amount,
+            f"Deposit to LightPhon wallet for {user.username}"
+        )
+        
+        # Salva nel database
+        from models import DepositInvoice
+        deposit = DepositInvoice(
+            user_id=user.id,
+            payment_hash=invoice['r_hash'],
+            payment_request=invoice['payment_request'],
+            amount=amount,
+            expires_at=datetime.utcnow() + timedelta(hours=1)
+        )
+        db.session.add(deposit)
+        db.session.commit()
+        
+        logger.info(f"Deposit invoice created: {amount} sats for user {user.username}")
+        
+        return jsonify({
+            'invoice': invoice['payment_request'],
+            'payment_hash': invoice['r_hash'],
+            'amount': amount,
+            'expires_at': deposit.expires_at.isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating deposit invoice: {e}")
+        db.session.rollback()
+        return jsonify({'error': 'Failed to create invoice'}), 500
+
+
+@app.route('/api/wallet/deposit/check/<payment_hash>', methods=['GET'])
+@jwt_required()
+def check_deposit_status(payment_hash):
+    """Verifica lo stato di un deposito."""
+    try:
+        user_id = get_jwt_identity()
+        
+        from models import DepositInvoice, Transaction
+        deposit = DepositInvoice.query.filter_by(
+            payment_hash=payment_hash,
+            user_id=int(user_id)
+        ).first()
+        
+        if not deposit:
+            return jsonify({'error': 'Deposit not found'}), 404
+        
+        # Se già pagato
+        if deposit.status == 'paid':
+            return jsonify({'status': 'paid', 'amount': deposit.amount})
+        
+        # Controlla pagamento
+        if get_lightning_manager().check_payment(deposit.payment_hash):
+            # Aggiorna deposito
+            deposit.status = 'paid'
+            deposit.paid_at = datetime.utcnow()
+            
+            # Aggiungi al saldo utente
+            user = User.query.get(int(user_id))
+            old_balance = user.balance
+            user.balance += deposit.amount
+            
+            # Registra transazione
+            tx = Transaction(
+                type='deposit',
+                user_id=user.id,
+                amount=deposit.amount,
+                balance_after=user.balance,
+                payment_hash=deposit.payment_hash,
+                status='completed',
+                description=f'Deposit of {deposit.amount} sats',
+                completed_at=datetime.utcnow()
+            )
+            db.session.add(tx)
+            db.session.commit()
+            
+            logger.info(f"Deposit completed: {deposit.amount} sats for user {user.username}")
+            
+            return jsonify({
+                'status': 'paid',
+                'amount': deposit.amount,
+                'new_balance': user.balance
+            })
+        
+        # Controlla se scaduto
+        if datetime.utcnow() > deposit.expires_at:
+            deposit.status = 'expired'
+            db.session.commit()
+            return jsonify({'status': 'expired'})
+        
+        return jsonify({'status': 'pending'})
+        
+    except Exception as e:
+        logger.error(f"Error checking deposit: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/wallet/transactions', methods=['GET'])
+@jwt_required()
+def get_wallet_transactions():
+    """Restituisce lo storico transazioni dell'utente."""
+    try:
+        user_id = get_jwt_identity()
+        
+        # Paginazione
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        per_page = min(per_page, 100)  # Max 100 per pagina
+        
+        from models import Transaction
+        transactions = Transaction.query.filter_by(user_id=int(user_id))\
+            .order_by(Transaction.created_at.desc())\
+            .paginate(page=page, per_page=per_page, error_out=False)
+        
+        return jsonify({
+            'transactions': [tx.to_dict() for tx in transactions.items],
+            'total': transactions.total,
+            'pages': transactions.pages,
+            'current_page': page
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting transactions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/wallet/pay_session', methods=['POST'])
+@jwt_required()
+def pay_session_from_wallet():
+    """Paga una sessione dal saldo wallet invece che con invoice esterna."""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(int(user_id))
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.get_json()
+        session_id = data.get('session_id')
+        
+        session = Session.query.get(session_id)
+        if not session or session.user_id != user.id:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        if session.node_id != 'pending':
+            return jsonify({'error': 'Session already paid'}), 400
+        
+        # Calcola costo (dal pagamento originale o stima)
+        # Il costo è già stato calcolato quando è stata creata la sessione
+        # Recupera dalla invoice originale
+        original_amount = get_lightning_manager().get_invoice_amount(session.payment_hash)
+        if not original_amount:
+            return jsonify({'error': 'Could not determine session cost'}), 400
+        
+        # Verifica saldo
+        if user.balance < original_amount:
+            return jsonify({
+                'error': 'Insufficient balance',
+                'required': original_amount,
+                'available': user.balance
+            }), 400
+        
+        # Calcola commissione (10%)
+        commission = int(original_amount * PLATFORM_COMMISSION_RATE)
+        node_payment = original_amount - commission
+        
+        # Deduce dal saldo
+        user.balance -= original_amount
+        
+        # Registra transazione
+        from models import Transaction, PlatformStats
+        tx = Transaction(
+            type='session_payment',
+            user_id=user.id,
+            amount=-original_amount,
+            fee=commission,
+            balance_after=user.balance,
+            status='completed',
+            description=f'Payment for session {session_id} ({session.model})',
+            reference_id=str(session_id),
+            completed_at=datetime.utcnow()
+        )
+        db.session.add(tx)
+        
+        # Aggiorna statistiche piattaforma
+        stats = PlatformStats.query.get(1)
+        if not stats:
+            stats = PlatformStats(id=1)
+            db.session.add(stats)
+        stats.total_commissions += commission
+        stats.total_volume += original_amount
+        
+        db.session.commit()
+        
+        logger.info(f"Session {session_id} paid from wallet: {original_amount} sats (commission: {commission})")
+        
+        return jsonify({
+            'success': True,
+            'amount_paid': original_amount,
+            'commission': commission,
+            'new_balance': user.balance
+        })
+        
+    except Exception as e:
+        logger.error(f"Error paying session from wallet: {e}")
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================
+# Admin API
+# ============================================
+
+def admin_required():
+    """Decorator per verificare che l'utente sia admin."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            user_id = get_jwt_identity()
+            user = User.query.get(int(user_id))
+            if not user or not user.is_admin:
+                return jsonify({'error': 'Admin access required'}), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+@app.route('/api/admin/stats', methods=['GET'])
+@jwt_required()
+def get_admin_stats():
+    """Statistiche piattaforma (solo admin)."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from models import PlatformStats, Transaction
+        
+        stats = PlatformStats.query.get(1)
+        if not stats:
+            stats = PlatformStats(id=1)
+            db.session.add(stats)
+            db.session.commit()
+        
+        # Calcola statistiche real-time
+        total_users = User.query.count()
+        total_nodes = Node.query.count()
+        online_nodes = len(connected_nodes)
+        active_sessions = Session.query.filter(
+            Session.active == True,
+            Session.expires_at > datetime.utcnow()
+        ).count()
+        
+        # Volume ultimi 30 giorni
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        recent_volume = db.session.query(db.func.sum(Transaction.amount))\
+            .filter(Transaction.type == 'session_payment')\
+            .filter(Transaction.created_at > thirty_days_ago)\
+            .scalar() or 0
+        
+        return jsonify({
+            'total_commissions': stats.total_commissions,
+            'total_commissions_btc': stats.total_commissions / 100_000_000,
+            'total_volume': stats.total_volume,
+            'total_users': total_users,
+            'total_nodes': total_nodes,
+            'online_nodes': online_nodes,
+            'active_sessions': active_sessions,
+            'volume_30d': abs(recent_volume)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting admin stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@jwt_required()
+def get_admin_users():
+    """Lista utenti (solo admin)."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        
+        users = User.query.order_by(User.created_at.desc())\
+            .paginate(page=page, per_page=per_page, error_out=False)
+        
+        return jsonify({
+            'users': [{
+                'id': u.id,
+                'username': u.username,
+                'balance': u.balance,
+                'is_admin': u.is_admin,
+                'created_at': u.created_at.isoformat() if u.created_at else None,
+                'sessions_count': Session.query.filter_by(user_id=u.id).count()
+            } for u in users.items],
+            'total': users.total,
+            'pages': users.pages
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting users: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/transactions', methods=['GET'])
+@jwt_required()
+def get_admin_transactions():
+    """Tutte le transazioni (solo admin)."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from models import Transaction
+        
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        tx_type = request.args.get('type')  # Filtro per tipo
+        
+        query = Transaction.query
+        if tx_type:
+            query = query.filter_by(type=tx_type)
+        
+        transactions = query.order_by(Transaction.created_at.desc())\
+            .paginate(page=page, per_page=per_page, error_out=False)
+        
+        return jsonify({
+            'transactions': [{
+                **tx.to_dict(),
+                'username': User.query.get(tx.user_id).username if User.query.get(tx.user_id) else 'Unknown'
+            } for tx in transactions.items],
+            'total': transactions.total,
+            'pages': transactions.pages
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting transactions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/commissions', methods=['GET'])
+@jwt_required()
+def get_admin_commissions():
+    """Report commissioni (solo admin)."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        from models import Transaction
+        
+        # Commissioni per giorno (ultimi 30 giorni)
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        
+        commissions = db.session.query(
+            db.func.date(Transaction.created_at).label('date'),
+            db.func.sum(Transaction.fee).label('total_fee'),
+            db.func.count(Transaction.id).label('count')
+        ).filter(
+            Transaction.type == 'session_payment',
+            Transaction.created_at > thirty_days_ago
+        ).group_by(db.func.date(Transaction.created_at))\
+         .order_by(db.func.date(Transaction.created_at).desc())\
+         .all()
+        
+        return jsonify({
+            'daily_commissions': [{
+                'date': str(c.date),
+                'total_fee': c.total_fee or 0,
+                'transactions_count': c.count
+            } for c in commissions],
+            'total_30d': sum(c.total_fee or 0 for c in commissions)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting commissions: {e}")
         return jsonify({'error': str(e)}), 500
 
 

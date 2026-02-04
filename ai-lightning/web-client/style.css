@@ -1721,3 +1721,365 @@ button:disabled {
     font-size: 1em;
     text-decoration: none;
 }
+
+/* ===========================================
+   Tab Navigation
+   =========================================== */
+.main-tabs {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--surface-light);
+    padding-bottom: 5px;
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1em;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.tab-btn.active {
+    background: var(--surface);
+    color: var(--primary);
+    font-weight: bold;
+}
+
+.tab-content {
+    animation: fadeIn 0.3s ease;
+}
+
+/* ===========================================
+   Wallet Styles
+   =========================================== */
+.wallet-container {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 30px;
+}
+
+.wallet-header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--surface-light);
+}
+
+.wallet-header h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.5em;
+}
+
+.wallet-balance-big {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 10px;
+}
+
+.wallet-balance-big .balance-amount {
+    font-size: 3em;
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.wallet-balance-big .balance-unit {
+    font-size: 1.2em;
+    color: var(--text-muted);
+}
+
+.wallet-balance-btc {
+    color: var(--text-muted);
+    margin-top: 5px;
+}
+
+.wallet-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-bottom: 30px;
+}
+
+.wallet-actions button {
+    min-width: 150px;
+    padding: 15px 30px;
+    font-size: 1.1em;
+}
+
+.wallet-transactions {
+    background: var(--surface-light);
+    border-radius: var(--border-radius);
+    padding: 20px;
+}
+
+.wallet-transactions h4 {
+    margin: 0 0 15px 0;
+}
+
+#transactions-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.transaction-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border-bottom: 1px solid var(--surface);
+}
+
+.transaction-item:last-child {
+    border-bottom: none;
+}
+
+.transaction-info {
+    flex: 1;
+}
+
+.transaction-type {
+    font-weight: bold;
+    text-transform: capitalize;
+}
+
+.transaction-type.deposit { color: var(--success); }
+.transaction-type.session_payment { color: var(--error); }
+.transaction-type.node_earning { color: var(--success); }
+.transaction-type.commission { color: var(--warning); }
+
+.transaction-desc {
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.transaction-amount {
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.transaction-amount.positive { color: var(--success); }
+.transaction-amount.negative { color: var(--error); }
+
+.transaction-date {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+/* Deposit Modal */
+.deposit-amount-select {
+    margin-bottom: 20px;
+}
+
+.amount-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.amount-btn {
+    padding: 12px;
+    background: var(--surface-light);
+    border: 2px solid transparent;
+    border-radius: var(--border-radius);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.amount-btn:hover {
+    border-color: var(--primary);
+}
+
+.amount-btn.active {
+    border-color: var(--primary);
+    background: rgba(255, 107, 53, 0.1);
+}
+
+.custom-amount {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.custom-amount input {
+    width: 150px;
+}
+
+.deposit-status {
+    margin: 20px 0;
+    padding: 15px;
+    background: var(--surface-light);
+    border-radius: var(--border-radius);
+    text-align: center;
+}
+
+.deposit-amount-display {
+    text-align: center;
+    font-size: 1.2em;
+    margin: 15px 0;
+}
+
+/* ===========================================
+   Admin Dashboard
+   =========================================== */
+.admin-container {
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 30px;
+}
+
+.admin-container h3 {
+    margin: 0 0 20px 0;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--warning);
+}
+
+.admin-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: var(--surface-light);
+    padding: 20px;
+    border-radius: var(--border-radius);
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2em;
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.stat-label {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-top: 5px;
+}
+
+.admin-section {
+    background: var(--surface-light);
+    border-radius: var(--border-radius);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.admin-section h4 {
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--surface);
+}
+
+#admin-users-list, #admin-transactions-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.admin-user-item, .admin-tx-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid var(--surface);
+}
+
+.admin-user-item:last-child, .admin-tx-item:last-child {
+    border-bottom: none;
+}
+
+.user-info-admin {
+    flex: 1;
+}
+
+.user-name {
+    font-weight: bold;
+}
+
+.user-meta {
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.user-balance {
+    font-weight: bold;
+    color: var(--primary);
+}
+
+/* Commission Chart (simple bar chart) */
+#admin-commissions-chart {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.commission-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.commission-date {
+    min-width: 80px;
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.commission-fill {
+    height: 20px;
+    background: linear-gradient(90deg, var(--primary), var(--warning));
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.commission-value {
+    font-size: 0.9em;
+    min-width: 80px;
+}
+
+/* Pagination */
+#transactions-pagination {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.pagination-btn {
+    padding: 8px 15px;
+    background: var(--surface);
+    border: 1px solid var(--surface-light);
+    border-radius: var(--border-radius);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.pagination-btn:hover {
+    background: var(--surface-light);
+}
+
+.pagination-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

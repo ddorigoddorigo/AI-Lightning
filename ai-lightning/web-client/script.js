@@ -20,6 +20,14 @@ let nodesRefreshInterval = null;
 // Session configuration
 let sessionContextLength = 4096;
 
+// Wallet state
+let currentDepositHash = null;
+let depositCheckInterval = null;
+let walletTransactionsPage = 1;
+
+// Admin state
+let isAdmin = false;
+
 // LLM Parameters (with defaults)
 let llmParams = {
     // Sampling parameters
@@ -304,6 +312,13 @@ async function loadUserProfile() {
         document.getElementById('user-info').textContent = `Welcome, ${data.username}!`;
         updateBalanceDisplay(data.balance);
         
+        // Controlla se admin
+        isAdmin = data.is_admin;
+        const adminTab = document.querySelector('.tab-btn.admin-only');
+        if (adminTab) {
+            adminTab.style.display = isAdmin ? 'block' : 'none';
+        }
+        
     } catch (error) {
         console.error('Error loading profile:', error);
         // Non fare logout su errori di rete
@@ -327,6 +342,21 @@ function updateBalanceDisplay(balance) {
                 container.classList.add('good');
             }
         }
+    }
+}
+
+async function updateBalance() {
+    try {
+        const response = await fetch('/api/me', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            updateBalanceDisplay(data.balance);
+        }
+    } catch (error) {
+        console.error('Error updating balance:', error);
     }
 }
 
@@ -1851,3 +1881,413 @@ document.addEventListener('click', (e) => {
         e.target.style.display = 'none';
     }
 });
+
+// ===========================================
+// Tab Navigation
+// ===========================================
+function switchTab(tabId) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+    });
+    
+    // Deactivate all buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Show selected tab
+    const tab = document.getElementById(tabId);
+    if (tab) {
+        tab.style.display = 'block';
+    }
+    
+    // Activate button
+    document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
+    
+    // Load tab data
+    if (tabId === 'wallet-tab') {
+        loadWalletData();
+    } else if (tabId === 'admin-tab') {
+        loadAdminData();
+    }
+}
+
+// ===========================================
+// Wallet Functions
+// ===========================================
+async function loadWalletData() {
+    try {
+        // Get balance
+        const balanceRes = await fetch('/api/wallet/balance', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (balanceRes.ok) {
+            const data = await balanceRes.json();
+            document.getElementById('wallet-balance-sats').textContent = data.balance_sats.toLocaleString();
+            document.getElementById('wallet-balance-btc').textContent = `≈ ${data.balance_btc.toFixed(8)} BTC`;
+        }
+        
+        // Get transactions
+        loadWalletTransactions(1);
+        
+    } catch (error) {
+        console.error('Error loading wallet data:', error);
+    }
+}
+
+async function loadWalletTransactions(page = 1) {
+    walletTransactionsPage = page;
+    
+    try {
+        const res = await fetch(`/api/wallet/transactions?page=${page}&per_page=10`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!res.ok) throw new Error('Failed to load transactions');
+        
+        const data = await res.json();
+        
+        const list = document.getElementById('transactions-list');
+        const loading = document.getElementById('transactions-loading');
+        
+        if (loading) loading.style.display = 'none';
+        
+        if (data.transactions.length === 0) {
+            list.innerHTML = '<p class="no-data">No transactions yet</p>';
+            return;
+        }
+        
+        list.innerHTML = data.transactions.map(tx => {
+            const isPositive = tx.amount > 0;
+            const typeClass = tx.type.replace('_', '-');
+            const date = new Date(tx.created_at).toLocaleString();
+            
+            return `
+                <div class="transaction-item">
+                    <div class="transaction-info">
+                        <div class="transaction-type ${tx.type}">${formatTxType(tx.type)}</div>
+                        <div class="transaction-desc">${tx.description || '-'}</div>
+                        <div class="transaction-date">${date}</div>
+                    </div>
+                    <div class="transaction-amount ${isPositive ? 'positive' : 'negative'}">
+                        ${isPositive ? '+' : ''}${tx.amount.toLocaleString()} sats
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        // Pagination
+        renderPagination(data.pages, page, 'transactions-pagination', loadWalletTransactions);
+        
+    } catch (error) {
+        console.error('Error loading transactions:', error);
+        document.getElementById('transactions-list').innerHTML = 
+            '<p class="error">Error loading transactions</p>';
+    }
+}
+
+function formatTxType(type) {
+    const types = {
+        'deposit': '⬇️ Deposit',
+        'session_payment': '⬆️ Session Payment',
+        'node_earning': '💰 Node Earning',
+        'commission': '📊 Commission',
+        'withdrawal': '📤 Withdrawal'
+    };
+    return types[type] || type;
+}
+
+function renderPagination(totalPages, currentPage, containerId, callback) {
+    const container = document.getElementById(containerId);
+    if (!container || totalPages <= 1) {
+        if (container) container.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    
+    // Previous button
+    html += `<button class="pagination-btn" onclick="${callback.name}(${currentPage - 1})" 
+             ${currentPage === 1 ? 'disabled' : ''}>← Prev</button>`;
+    
+    // Page numbers
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === currentPage) {
+            html += `<button class="pagination-btn active">${i}</button>`;
+        } else if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
+            html += `<button class="pagination-btn" onclick="${callback.name}(${i})">${i}</button>`;
+        } else if (Math.abs(i - currentPage) === 2) {
+            html += `<span>...</span>`;
+        }
+    }
+    
+    // Next button
+    html += `<button class="pagination-btn" onclick="${callback.name}(${currentPage + 1})" 
+             ${currentPage === totalPages ? 'disabled' : ''}>Next →</button>`;
+    
+    container.innerHTML = html;
+}
+
+function showDepositModal() {
+    document.getElementById('deposit-modal').style.display = 'flex';
+    document.getElementById('deposit-form').style.display = 'block';
+    document.getElementById('deposit-invoice').style.display = 'none';
+}
+
+function setDepositAmount(amount) {
+    document.getElementById('deposit-amount').value = amount;
+    document.querySelectorAll('.amount-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+}
+
+async function createDepositInvoice() {
+    const amount = parseInt(document.getElementById('deposit-amount').value);
+    
+    if (amount < 1000) {
+        showError('Minimum deposit is 1000 sats');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/wallet/deposit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ amount })
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Failed to create invoice');
+        }
+        
+        const data = await res.json();
+        
+        // Show invoice
+        document.getElementById('deposit-form').style.display = 'none';
+        document.getElementById('deposit-invoice').style.display = 'block';
+        document.getElementById('deposit-invoice-text').value = data.invoice;
+        document.getElementById('deposit-invoice-amount').textContent = data.amount.toLocaleString();
+        
+        currentDepositHash = data.payment_hash;
+        
+        // Generate QR
+        const qrContainer = document.getElementById('deposit-qr-code');
+        qrContainer.innerHTML = '';
+        new QRCode(qrContainer, {
+            text: data.invoice.toUpperCase(),
+            width: 200,
+            height: 200,
+            colorDark: '#000000',
+            colorLight: '#ffffff'
+        });
+        
+        // Start checking for payment
+        startDepositCheck();
+        
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+function startDepositCheck() {
+    if (depositCheckInterval) {
+        clearInterval(depositCheckInterval);
+    }
+    
+    depositCheckInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/wallet/deposit/check/${currentDepositHash}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            
+            if (!res.ok) return;
+            
+            const data = await res.json();
+            
+            if (data.status === 'paid') {
+                clearInterval(depositCheckInterval);
+                depositCheckInterval = null;
+                
+                document.getElementById('deposit-status-text').textContent = '✅ Payment received!';
+                showSuccess(`Deposited ${data.amount.toLocaleString()} sats!`);
+                
+                // Update balance display
+                updateBalance();
+                
+                // Reload wallet data
+                setTimeout(() => {
+                    closeModal('deposit-modal');
+                    loadWalletData();
+                }, 2000);
+                
+            } else if (data.status === 'expired') {
+                clearInterval(depositCheckInterval);
+                depositCheckInterval = null;
+                document.getElementById('deposit-status-text').textContent = '❌ Invoice expired';
+            }
+            
+        } catch (error) {
+            console.error('Error checking deposit:', error);
+        }
+    }, 3000);
+}
+
+function checkDepositManual() {
+    // Trigger immediate check
+    if (currentDepositHash) {
+        fetch(`/api/wallet/deposit/check/${currentDepositHash}`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        }).then(res => res.json()).then(data => {
+            if (data.status === 'paid') {
+                showSuccess('Payment confirmed!');
+                loadWalletData();
+                closeModal('deposit-modal');
+            } else {
+                showError('Payment not received yet');
+            }
+        });
+    }
+}
+
+function copyDepositInvoice() {
+    const invoice = document.getElementById('deposit-invoice-text').value;
+    navigator.clipboard.writeText(invoice);
+    showSuccess('Invoice copied!');
+}
+
+function showWithdrawModal() {
+    showError('Withdrawals coming soon!');
+}
+
+// ===========================================
+// Admin Functions
+// ===========================================
+async function loadAdminData() {
+    if (!isAdmin) return;
+    
+    try {
+        // Load stats
+        const statsRes = await fetch('/api/admin/stats', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (statsRes.ok) {
+            const stats = await statsRes.json();
+            document.getElementById('admin-commissions').textContent = stats.total_commissions.toLocaleString();
+            document.getElementById('admin-volume').textContent = stats.total_volume.toLocaleString();
+            document.getElementById('admin-users').textContent = stats.total_users;
+            document.getElementById('admin-nodes').textContent = `${stats.online_nodes}/${stats.total_nodes}`;
+        }
+        
+        // Load commissions chart
+        loadCommissionsChart();
+        
+        // Load users
+        loadAdminUsers();
+        
+        // Load transactions
+        loadAdminTransactions();
+        
+    } catch (error) {
+        console.error('Error loading admin data:', error);
+    }
+}
+
+async function loadCommissionsChart() {
+    try {
+        const res = await fetch('/api/admin/commissions', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const container = document.getElementById('admin-commissions-chart');
+        
+        if (data.daily_commissions.length === 0) {
+            container.innerHTML = '<p class="no-data">No commission data</p>';
+            return;
+        }
+        
+        // Find max for scaling
+        const maxFee = Math.max(...data.daily_commissions.map(d => d.total_fee));
+        
+        container.innerHTML = data.daily_commissions.map(d => {
+            const width = maxFee > 0 ? (d.total_fee / maxFee) * 100 : 0;
+            return `
+                <div class="commission-bar">
+                    <span class="commission-date">${d.date}</span>
+                    <div class="commission-fill" style="width: ${width}%"></div>
+                    <span class="commission-value">${d.total_fee.toLocaleString()} sats</span>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading commissions:', error);
+    }
+}
+
+async function loadAdminUsers() {
+    try {
+        const res = await fetch('/api/admin/users?per_page=10', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const container = document.getElementById('admin-users-list');
+        
+        container.innerHTML = data.users.map(u => `
+            <div class="admin-user-item">
+                <div class="user-info-admin">
+                    <div class="user-name">${u.username} ${u.is_admin ? '👑' : ''}</div>
+                    <div class="user-meta">ID: ${u.id} | Sessions: ${u.sessions_count}</div>
+                </div>
+                <div class="user-balance">${u.balance.toLocaleString()} sats</div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading users:', error);
+    }
+}
+
+async function loadAdminTransactions() {
+    try {
+        const res = await fetch('/api/admin/transactions?per_page=10', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const container = document.getElementById('admin-transactions-list');
+        
+        container.innerHTML = data.transactions.map(tx => {
+            const date = new Date(tx.created_at).toLocaleString();
+            return `
+                <div class="admin-tx-item">
+                    <div class="transaction-info">
+                        <div class="transaction-type ${tx.type}">${formatTxType(tx.type)}</div>
+                        <div class="transaction-desc">${tx.username} - ${tx.description || '-'}</div>
+                        <div class="transaction-date">${date}</div>
+                    </div>
+                    <div class="transaction-amount ${tx.amount > 0 ? 'positive' : 'negative'}">
+                        ${tx.amount > 0 ? '+' : ''}${tx.amount.toLocaleString()} sats
+                        ${tx.fee > 0 ? `<br><small>Fee: ${tx.fee}</small>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading admin transactions:', error);
+    }
+}
