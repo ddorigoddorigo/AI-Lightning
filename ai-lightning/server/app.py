@@ -578,17 +578,29 @@ def get_admin_stats():
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
     
+    logger.info(f"Admin stats requested by user {user_id}, is_admin: {user.is_admin if user else 'None'}")
+    
     if not user or not user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
     
     try:
         from models import PlatformStats, Transaction
         
-        stats = PlatformStats.query.get(1)
-        if not stats:
-            stats = PlatformStats(id=1)
-            db.session.add(stats)
-            db.session.commit()
+        # Try to get or create platform stats
+        try:
+            stats = PlatformStats.query.get(1)
+            if not stats:
+                stats = PlatformStats(id=1)
+                db.session.add(stats)
+                db.session.commit()
+                logger.info("Created new PlatformStats record")
+        except Exception as e:
+            logger.error(f"Error getting PlatformStats: {e}")
+            # If table doesn't exist, use defaults
+            stats = None
+        
+        total_commissions = stats.total_commissions if stats else 0
+        total_volume = stats.total_volume if stats else 0
         
         # Calculate real-time statistics
         total_users = User.query.count()
@@ -601,21 +613,28 @@ def get_admin_stats():
         
         # Volume ultimi 30 giorni
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        recent_volume = db.session.query(db.func.sum(Transaction.amount))\
-            .filter(Transaction.type == 'session_payment')\
-            .filter(Transaction.created_at > thirty_days_ago)\
-            .scalar() or 0
+        try:
+            recent_volume = db.session.query(db.func.sum(Transaction.amount))\
+                .filter(Transaction.type == 'session_payment')\
+                .filter(Transaction.created_at > thirty_days_ago)\
+                .scalar() or 0
+        except Exception as e:
+            logger.error(f"Error calculating recent volume: {e}")
+            recent_volume = 0
         
-        return jsonify({
-            'total_commissions': stats.total_commissions,
-            'total_commissions_btc': stats.total_commissions / 100_000_000,
-            'total_volume': stats.total_volume,
+        result = {
+            'total_commissions': total_commissions,
+            'total_commissions_btc': total_commissions / 100_000_000,
+            'total_volume': total_volume,
             'total_users': total_users,
             'total_nodes': total_nodes,
             'online_nodes': online_nodes,
             'active_sessions': active_sessions,
             'volume_30d': abs(recent_volume)
-        })
+        }
+        
+        logger.info(f"Admin stats: {result}")
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"Error getting admin stats: {e}")

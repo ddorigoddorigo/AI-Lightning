@@ -2359,20 +2359,31 @@ function showWithdrawModal() {
 // Admin Functions
 // ===========================================
 async function loadAdminData() {
-    if (!isAdmin) return;
+    console.log('loadAdminData called, isAdmin:', isAdmin);
+    if (!isAdmin) {
+        console.log('Not admin, skipping admin data load');
+        return;
+    }
     
     try {
         // Load stats
+        console.log('Fetching admin stats...');
         const statsRes = await fetch('/api/admin/stats', {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         
+        console.log('Admin stats response status:', statsRes.status);
+        
         if (statsRes.ok) {
             const stats = await statsRes.json();
+            console.log('Admin stats loaded:', stats);
             document.getElementById('admin-commissions').textContent = stats.total_commissions.toLocaleString();
             document.getElementById('admin-volume').textContent = stats.total_volume.toLocaleString();
             document.getElementById('admin-users').textContent = stats.total_users;
             document.getElementById('admin-nodes').textContent = `${stats.online_nodes}/${stats.total_nodes}`;
+        } else {
+            const errorData = await statsRes.json().catch(() => ({}));
+            console.error('Admin stats error:', statsRes.status, errorData);
         }
         
         // Load commissions chart
