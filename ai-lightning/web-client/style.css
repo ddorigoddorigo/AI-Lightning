@@ -1927,8 +1927,73 @@ button:disabled {
 }
 
 /* Deposit Modal */
+#deposit-modal .modal-content {
+    max-width: 500px;
+    width: 95%;
+    margin: auto;
+}
+
+#deposit-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 20px;
+}
+
+#deposit-invoice {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#deposit-qr-code {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 20px auto;
+    padding: 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+#deposit-qr-code canvas,
+#deposit-qr-code img,
+#deposit-qr-code svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.invoice-text {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    max-width: 400px;
+    margin: 15px auto;
+}
+
+.invoice-text input {
+    flex: 1;
+    padding: 12px;
+    background: var(--surface-light);
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+    color: var(--text);
+    font-family: 'Consolas', monospace;
+    font-size: 0.8em;
+}
+
+.invoice-text .btn-copy {
+    padding: 12px 15px;
+    white-space: nowrap;
+}
+
 .deposit-amount-select {
     margin-bottom: 20px;
+    width: 100%;
 }
 
 .amount-buttons {
@@ -2133,4 +2198,83 @@ button:disabled {
 .pagination-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* ===========================================
+   Responsive - Large Screens (Full HD, 4K)
+   =========================================== */
+@media (min-width: 1920px) {
+    #deposit-modal .modal-content {
+        max-width: 550px;
+    }
+    
+    #deposit-qr-code {
+        padding: 25px;
+    }
+    
+    #deposit-qr-code canvas,
+    #deposit-qr-code img,
+    #deposit-qr-code svg {
+        width: 280px !important;
+        height: 280px !important;
+    }
+    
+    .invoice-text {
+        max-width: 450px;
+    }
+    
+    .deposit-amount-display {
+        font-size: 1.4em;
+    }
+}
+
+/* 4K Screens */
+@media (min-width: 2560px) {
+    #deposit-modal .modal-content {
+        max-width: 650px;
+    }
+    
+    #deposit-qr-code {
+        padding: 30px;
+    }
+    
+    #deposit-qr-code canvas,
+    #deposit-qr-code img,
+    #deposit-qr-code svg {
+        width: 320px !important;
+        height: 320px !important;
+    }
+    
+    .invoice-text {
+        max-width: 550px;
+    }
+    
+    .deposit-amount-display {
+        font-size: 1.6em;
+    }
+    
+    .amount-btn {
+        padding: 16px;
+        font-size: 1.1em;
+    }
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
+    #deposit-modal .modal-content {
+        width: 98%;
+        max-height: 90vh;
+    }
+    
+    #deposit-qr-code {
+        padding: 15px;
+    }
+    
+    .invoice-text {
+        flex-direction: column;
+    }
+    
+    .amount-buttons {
+        grid-template-columns: 1fr;
+    }
 }
