@@ -477,9 +477,11 @@ class ModelManager:
         """
         models = []
         for model in self.get_enabled_models():
+            # Use filename as name for display (without .gguf extension)
+            display_name = model.filename.replace('.gguf', '').replace('.GGUF', '') if model.filename else model.name
             model_data = {
                 'id': model.id,
-                'name': model.name,
+                'name': display_name,
                 'parameters': model.parameters,
                 'quantization': model.quantization,
                 'context_length': model.context_length,
