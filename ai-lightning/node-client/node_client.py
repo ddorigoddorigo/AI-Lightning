@@ -143,6 +143,8 @@ class LlamaProcess:
         # Costruisci il comando
         if self.use_hf:
             # Usa -hf per scaricare da HuggingFace
+            # Formato: owner/repo:filename.gguf o owner/repo:quantization
+            logger.info(f"Using HuggingFace model: {self.model_source}")
             cmd = [
                 self.llama_command,
                 '-hf', self.model_source,
@@ -151,6 +153,12 @@ class LlamaProcess:
                 '--ctx-size', str(self.context),
                 '-ngl', str(self.gpu_layers)
             ]
+            
+            # Aggiungi HF_TOKEN se presente nell'ambiente (per modelli gated)
+            hf_token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
+            if hf_token:
+                cmd.extend(['--hf-token', hf_token])
+                logger.info("Using HuggingFace token for authentication")
         else:
             # Usa modello locale
             if not self.model_source or not os.path.exists(self.model_source):
@@ -204,11 +212,40 @@ class LlamaProcess:
                 download_callback('loading', 'Loading model into memory...')
         
         for i in range(600):  # 10 minuti timeout
-            # Controlla se il processo è ancora vivo
+            # Check if the process is still alive
             if self.process.poll() is not None:
                 # Processo terminato, leggi output rimanente
-                remaining_output = self.process.stdout.read() if self.process.stdout else ""
-                logger.error(f"llama-server crashed. Output: {remaining_output}")
+                exit_code = self.process.returncode
+                remaining_output = ""
+                try:
+                    remaining_output = self.process.stdout.read() if self.process.stdout else ""
+                except:
+                    pass
+                
+                # Aggiungi output dalla coda se presente (Windows)
+                if hasattr(self, '_output_queue'):
+                    import queue
+                    queued_lines = []
+                    try:
+                        while True:
+                            queued_lines.append(self._output_queue.get_nowait())
+                    except queue.Empty:
+                        pass
+                    if queued_lines:
+                        remaining_output += "\n" + "\n".join(queued_lines)
+                
+                logger.error(f"llama-server crashed with exit code {exit_code}")
+                logger.error(f"llama-server output: {remaining_output}")
+                
+                # Notify specific error
+                if download_callback:
+                    if 'error' in remaining_output.lower() or 'failed' in remaining_output.lower():
+                        download_callback('error', f'Model loading failed: {remaining_output[:200]}')
+                    elif 'not found' in remaining_output.lower():
+                        download_callback('error', f'Model not found or invalid format')
+                    else:
+                        download_callback('error', f'llama-server crashed (code {exit_code})')
+                
                 return False
             
             # Prova a leggere l'output (non bloccante)
@@ -262,7 +299,7 @@ class LlamaProcess:
             except:
                 pass
             
-            # Controlla se il server è pronto
+            # Check if server is ready
             try:
                 r = httpx.get(f"http://127.0.0.1:{self.port}/health", timeout=2)
                 if r.status_code == 200:
@@ -326,12 +363,12 @@ class LlamaProcess:
             logger.info(f"[STOP] llama-server process terminated successfully")
     
     def request_stop_streaming(self):
-        """Richiede l'interruzione dello streaming corrente senza fermare il processo"""
+        """Request interruption of current streaming without stopping the process"""
         self._stop_streaming = True
         logger.info("Streaming stop requested")
     
     def reset_stop_flag(self):
-        """Reset del flag di stop prima di una nuova generazione"""
+        """Reset stop flag before a new generation"""
         self._stop_streaming = False
     
     def is_running(self):
@@ -348,19 +385,19 @@ class LlamaProcess:
                  dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=-1,
                  samplers=None):
         """
-        Genera una risposta (non-streaming, per compatibilità).
+        Generate a response (non-streaming, for compatibility).
         
         Args:
-            prompt: Il prompt da processare
-            max_tokens: Numero massimo di token da generare (-1 = context length)
-            temperature: Controlla la casualità (0=deterministico, 1+=più creativo)
-            top_k: Considera solo i top k token più probabili (0=disabilitato)
-            top_p: Nucleus sampling - considera token fino a probabilità cumulativa p
-            repeat_penalty: Penalizza la ripetizione di token (1.0=nessuna penalità)
-            presence_penalty: Penalizza token già apparsi (-2.0 a 2.0)
-            frequency_penalty: Penalizza token in base alla frequenza (-2.0 a 2.0)
-            seed: Seed per riproducibilità (-1=random)
-            stop: Lista di stringhe di stop
+            prompt: The prompt to process
+            max_tokens: Maximum number of tokens to generate (-1 = context length)
+            temperature: Controls randomness (0=deterministic, 1+=more creative)
+            top_k: Consider only top k most likely tokens (0=disabled)
+            top_p: Nucleus sampling - consider tokens up to cumulative probability p
+            repeat_penalty: Penalize token repetition (1.0=no penalty)
+            presence_penalty: Penalize tokens already appeared (-2.0 to 2.0)
+            frequency_penalty: Penalize tokens based on frequency (-2.0 to 2.0)
+            seed: Seed for reproducibility (-1=random)
+            stop: List of stop strings
             min_p: Minimum probability threshold
             typical_p: Typical sampling (1.0=disabled)
             dynatemp_range: Dynamic temperature range (0=disabled)
@@ -445,20 +482,20 @@ class LlamaProcess:
                         dry_multiplier=0.0, dry_base=1.75, dry_allowed_length=2, dry_penalty_last_n=-1,
                         samplers=None):
         """
-        Genera una risposta in streaming, token per token.
+        Generate a response in streaming mode, token by token.
         
         Args:
-            prompt: Il prompt da processare
-            max_tokens: Numero massimo di token da generare
-            temperature: Controlla la casualità (0=deterministico, 1+=più creativo)
-            top_k: Considera solo i top k token più probabili (0=disabilitato)
-            top_p: Nucleus sampling - considera token fino a probabilità cumulativa p
-            repeat_penalty: Penalizza la ripetizione di token (1.0=nessuna penalità)
-            presence_penalty: Penalizza token già apparsi (-2.0 a 2.0)
-            frequency_penalty: Penalizza token in base alla frequenza (-2.0 a 2.0)
-            seed: Seed per riproducibilità (-1=random)
-            stop: Lista di stringhe di stop
-            token_callback: Funzione chiamata per ogni token generato (token, is_final)
+            prompt: The prompt to process
+            max_tokens: Maximum number of tokens to generate
+            temperature: Controls randomness (0=deterministic, 1+=more creative)
+            top_k: Consider only top k most likely tokens (0=disabled)
+            top_p: Nucleus sampling - consider tokens up to cumulative probability p
+            repeat_penalty: Penalize token repetition (1.0=no penalty)
+            presence_penalty: Penalize tokens already appeared (-2.0 to 2.0)
+            frequency_penalty: Penalize tokens based on frequency (-2.0 to 2.0)
+            seed: Seed for reproducibility (-1=random)
+            stop: List of stop strings
+            token_callback: Function called for each generated token (token, is_final)
             min_p: Minimum probability threshold
             typical_p: Typical sampling (1.0=disabled)
             dynatemp_range: Dynamic temperature range (0=disabled)
@@ -473,7 +510,7 @@ class LlamaProcess:
             samplers: Sampler order string (semicolon separated)
         
         Returns:
-            (full_response, error) - La risposta completa e eventuale errore
+            (full_response, error) - The complete response and any error
         """
         if not self.is_running():
             return None, "Process not running"
@@ -540,7 +577,7 @@ class LlamaProcess:
                 
                 buffer = ""
                 for chunk in response.iter_text():
-                    # Controlla se è stato richiesto lo stop
+                    # Check if stop was requested
                     if self._stop_streaming:
                         logger.info("Streaming interrupted by stop request")
                         was_stopped = True
@@ -618,7 +655,7 @@ class LlamaProcess:
             logger.error(f"Stream timeout: {e}")
             return None, f"Timeout: {str(e)}"
         except Exception as e:
-            # Se è stato stoppato, l'errore potrebbe essere dovuto alla chiusura della connessione
+            # If stopped, the error might be due to connection closure
             if self._stop_streaming:
                 logger.info(f"Stream interrupted during stop, partial response: {len(full_response)} chars")
                 return full_response, "Stopped by user"
@@ -641,7 +678,7 @@ class NodeClient:
         # Lightning wallet per ricevere pagamenti
         self.lightning = NodeLightning(self.config)
         
-        # Supporta sia il nuovo 'command' che il vecchio 'bin' per retrocompatibilità
+        # Support both new 'command' and old 'bin' for backward compatibility
         self.llama_command = self.config.get('LLM', 'command', fallback='')
         if not self.llama_command:
             self.llama_command = self.config.get('LLM', 'bin', fallback='llama-server')
@@ -670,7 +707,7 @@ class NodeClient:
         self.running = False
         self._connected = False
         
-        # Autenticazione utente (impostata dalla GUI)
+        # User authentication (set by GUI)
         self.auth_token = None
         self.user_id = None
         
@@ -739,7 +776,7 @@ class NodeClient:
             model_source = None
             use_hf = False
             
-            # Se è stato passato un hf_repo direttamente, usalo per download on-demand
+            # If hf_repo was passed directly, use it for on-demand download
             if hf_repo_direct:
                 model_source = hf_repo_direct
                 use_hf = True
@@ -763,7 +800,7 @@ class NodeClient:
                     model_info = self.model_manager.get_model_by_name(model_name)
                 
                 if model_info:
-                    # Controlla se è un modello HuggingFace
+                    # Check if it's a HuggingFace model
                     if hasattr(model_info, 'hf_repo') and model_info.hf_repo:
                         model_source = model_info.hf_repo
                         use_hf = True
@@ -786,7 +823,7 @@ class NodeClient:
             if not model_source and isinstance(self.models, list):
                 for m in self.models:
                     if m.get('id') == model_id or m.get('name') == model_name:
-                        # Controlla se è HuggingFace
+                        # Check if it's HuggingFace
                         if m.get('hf_repo'):
                             model_source = m.get('hf_repo')
                             use_hf = True
@@ -820,15 +857,15 @@ class NodeClient:
                 })
                 return
             
-            # IMPORTANTE: Chiudi tutte le sessioni esistenti prima di avviarne una nuova
-            # (solo un modello alla volta può essere caricato)
+            # IMPORTANT: Close all existing sessions before starting a new one
+            # (only one model at a time can be loaded)
             if self.active_sessions:
                 logger.info(f"Closing {len(self.active_sessions)} existing session(s) before starting new one")
                 for old_session_id, old_llama in list(self.active_sessions.items()):
                     logger.info(f"Stopping existing session {old_session_id}")
                     old_llama.request_stop_streaming()
                     old_llama.stop()
-                    # Notifica server che la sessione è stata chiusa
+                    # Notify server that session was closed
                     self.sio.emit('session_stopped', {'session_id': old_session_id})
                 self.active_sessions.clear()
             
@@ -845,7 +882,7 @@ class NodeClient:
                 use_hf=use_hf
             )
             
-            # Notifica che stiamo avviando (potrebbe richiedere download)
+            # Notify that we are starting (may require download)
             if use_hf:
                 self.sio.emit('session_status', {
                     'session_id': session_id,
@@ -854,7 +891,7 @@ class NodeClient:
                 })
             
             def status_callback(status, msg):
-                """Callback per aggiornamenti di stato durante download/caricamento"""
+                """Callback for status updates during download/loading"""
                 self.sio.emit('session_status', {
                     'session_id': session_id,
                     'status': status,
@@ -863,6 +900,12 @@ class NodeClient:
             
             if llama.start(download_callback=status_callback):
                 self.active_sessions[session_id] = llama
+                
+                # Track model usage - increment use_count
+                if self.model_manager and model_id:
+                    self.model_manager.mark_model_used(model_id)
+                    logger.info(f"Updated usage stats for model {model_id}")
+                
                 self.sio.emit('session_started', {
                     'session_id': session_id,
                     'node_id': self.node_id,
@@ -898,7 +941,7 @@ class NodeClient:
                 logger.info(f"[STOP_SESSION] Session {session_id} stopped - llama-server process terminated")
                 logger.info(f"[STOP_SESSION] Remaining active sessions: {list(self.active_sessions.keys())}")
                 
-                # Notifica la GUI che la sessione è stata fermata
+                # Notify GUI that session was stopped
                 if self.gui_session_ended_callback:
                     try:
                         self.gui_session_ended_callback(session_id)
@@ -911,7 +954,7 @@ class NodeClient:
         
         @self.sio.on('inference_request')
         def on_inference(data):
-            """Richiesta di inferenza con streaming"""
+            """Inference request with streaming"""
             session_id = str(data['session_id'])
             prompt = data['prompt']
             
@@ -960,14 +1003,14 @@ class NodeClient:
             
             llama = self.active_sessions[session_id]
             
-            # Notifica GUI del prompt ricevuto
+            # Notify GUI of received prompt
             if self.gui_prompt_callback:
                 try:
                     self.gui_prompt_callback(session_id, prompt)
                 except Exception as e:
                     logger.error(f"GUI prompt callback error: {e}")
             
-            # Esegui in thread per non bloccare
+            # Execute in thread to avoid blocking
             def do_inference():
                 if use_streaming:
                     # Streaming: invia token per token
@@ -979,11 +1022,11 @@ class NodeClient:
                         nonlocal token_count, last_emit_time
                         token_count += 1
                         
-                        # Logging ogni 10 token per non spammare
+                        # Log every 10 tokens to avoid spam
                         if token_count <= 3 or token_count % 10 == 0:
                             logger.info(f"[STREAM] Token {token_count} for session {session_id}")
                         
-                        # Notifica GUI del token
+                        # Notify GUI of token
                         if self.gui_token_callback:
                             try:
                                 self.gui_token_callback(token, is_final)
@@ -1106,24 +1149,24 @@ class NodeClient:
         raise Exception("No free ports")
     
     def _save_token(self, token):
-        """Salva il token nel config"""
+        """Save token to config"""
         self.config.set('Node', 'token', token)
         with open('config.ini', 'w') as f:
             self.config.write(f)
     
     def _start_local_http_server(self, port=9000):
         """
-        Avvia un server HTTP locale per ricevere richieste dal server principale.
-        Principalmente usato per l'endpoint /api/create_invoice per pagamenti Lightning.
+        Start a local HTTP server to receive requests from the main server.
+        Primarily used for /api/create_invoice endpoint for Lightning payments.
         """
         app = Flask(__name__)
-        app.logger.setLevel(logging.WARNING)  # Riduci verbosità
+        app.logger.setLevel(logging.WARNING)  # Reduce verbosity
         
-        node_client = self  # Reference per i routes
+        node_client = self  # Reference for routes
         
         @app.route('/api/create_invoice', methods=['POST'])
         def create_invoice():
-            """Crea una Lightning invoice per ricevere un pagamento"""
+            """Create a Lightning invoice to receive a payment"""
             if not node_client.lightning.enabled:
                 return jsonify({'error': 'Lightning not configured on this node'}), 400
             
@@ -1260,8 +1303,8 @@ class NodeClient:
 
 
 def detect_gpu():
-    """Rileva il tipo di GPU"""
-    # Prova NVIDIA
+    """Detect GPU type"""
+    # Try NVIDIA
     try:
         result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
         if result.returncode == 0:
@@ -1269,11 +1312,11 @@ def detect_gpu():
     except:
         pass
     
-    # Prova AMD (Windows)
+    # Try AMD (Windows)
     try:
-        # ROCm su Windows è limitato, ma proviamo
+        # ROCm on Windows is limited, but let's try
         if sys.platform == 'win32':
-            # Controlla se esiste hip runtime
+            # Check if hip runtime exists
             hip_path = os.environ.get('HIP_PATH', '')
             if hip_path and os.path.exists(hip_path):
                 return 'amd'
@@ -1293,7 +1336,7 @@ def find_llama_binary():
     gpu = detect_gpu()
     logger.info(f"Detected GPU: {gpu}")
     
-    # Prima controlla se llama-server è nel PATH
+    # First check if llama-server is in PATH
     try:
         result = subprocess.run(
             ['llama-server', '--version'],

@@ -10,7 +10,7 @@
 let socket = null;
 let authToken = localStorage.getItem('authToken');
 let currentSession = localStorage.getItem('sessionId');
-let selectedNode = null;  // Nodo selezionato
+let selectedNode = null;  // Selected node
 let selectedModel = null;
 let availableModels = [];
 let onlineNodes = [];
@@ -66,23 +66,23 @@ let llmParams = {
     samplers: "penalties;dry;top_k;typical_p;top_p;min_p;xtc;temperature"
 };
 
-// Flag per sessione attiva (blocca navigazione)
+// Flag for active session (blocks navigation)
 let sessionActive = false;
 
 // ===========================================
 // Initialization
 // ===========================================
 document.addEventListener('DOMContentLoaded', () => {
-    // Carica info rete (disponibile anche senza login)
+    // Load network info (available without login)
     loadNetworkInfo();
     
-    // Setup slider listeners per parametri LLM
+    // Setup slider listeners for LLM params
     setupLLMParamSliders();
     
     // Setup context slider
     setupContextSlider();
     
-    // Protezione contro navigazione durante sessione attiva
+    // Protection against navigation during active session
     window.addEventListener('beforeunload', (e) => {
         if (sessionActive && currentSession) {
             e.preventDefault();
@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showAuth();
     }
     
-    // Refresh periodico network status
+    // Periodic network status refresh
     setInterval(loadNetworkInfo, 30000);
 });
 
@@ -274,10 +274,10 @@ function showMain() {
     document.getElementById('invoice-section').style.display = 'none';
     document.getElementById('chat-section').style.display = 'none';
     
-    // Carica info utente incluso balance
+    // Load user info including balance
     loadUserProfile();
     
-    // Carica nodi
+    // Load nodes
     loadNodes();
     startNodesRefresh();
 }
@@ -308,8 +308,8 @@ async function loadUserProfile() {
             console.error('Profile error:', errorData);
             
             if (response.status === 401 || response.status === 422) {
-                // Token scaduto/invalido - ma solo se non è un login appena fatto
-                // Controlliamo se il token è stato appena salvato
+                // Token expired/invalid - but only if not a fresh login
+                // Check if the token was just saved
                 const savedToken = localStorage.getItem('authToken');
                 if (savedToken !== authToken) {
                     console.warn('Token mismatch, possible race condition');
@@ -540,7 +540,7 @@ function startBusyNodeTimers() {
         if (anyActive) {
             setTimeout(updateTimers, 1000);
         } else {
-            // Ricarica nodi quando tutti i timer sono finiti
+            // Reload nodes when all timers finish
             loadNodes();
         }
     };
@@ -551,12 +551,12 @@ function startBusyNodeTimers() {
 function selectNode(node) {
     selectedNode = node;
     
-    // Mostra sezione modelli
+    // Show models section
     document.getElementById('nodes-section').style.display = 'none';
     document.getElementById('models-section').style.display = 'block';
     document.getElementById('selected-node-name').textContent = node.name || node.node_id.substring(0, 8);
     
-    // Render modelli del nodo selezionato
+    // Render selected node's models
     renderNodeModels(node.models || []);
 }
 
@@ -568,7 +568,7 @@ function backToNodes() {
     document.getElementById('session-config').style.display = 'none';
     document.getElementById('nodes-section').style.display = 'block';
     
-    // Ricarica nodi
+    // Reload nodes
     loadNodes();
 }
 
@@ -632,7 +632,7 @@ function loadHuggingFaceModel() {
         return;
     }
     
-    // Crea un modello custom da HuggingFace
+    // Create a custom model from HuggingFace
     const model = {
         id: 'hf_' + btoa(hfRepo).substring(0, 16),
         name: hfRepo.split('/').pop().split(':')[0],
@@ -644,7 +644,7 @@ function loadHuggingFaceModel() {
         architecture: 'unknown'
     };
     
-    // Seleziona questo modello
+    // Select this model
     selectModel(model);
     showSuccess(`Loading model: ${hfRepo}`);
 }
@@ -672,13 +672,13 @@ function stopNodesRefresh() {
 // Models (legacy - kept for compatibility)
 // ===========================================
 async function loadModels() {
-    // Se c'è un nodo selezionato, mostra i suoi modelli
+    // If there's a selected node, show its models
     if (selectedNode) {
         renderNodeModels(selectedNode.models || []);
         return;
     }
     
-    // Altrimenti carica nodi
+    // Otherwise load nodes
     loadNodes();
 }
 
@@ -697,7 +697,7 @@ function renderModelsGrid(models, busyModels = []) {
     if (!grid) return;
     grid.innerHTML = '';
     
-    // Determina icona in base all'architettura
+    // Determine icon based on architecture
     const icons = {
         'llama': '🦙',
         'mistral': '🌪️',
@@ -709,7 +709,7 @@ function renderModelsGrid(models, busyModels = []) {
         'default': '🧠'
     };
     
-    // Render modelli disponibili
+    // Render available models
     models.forEach(model => {
         const card = document.createElement('div');
         card.className = 'model-card';
@@ -717,7 +717,7 @@ function renderModelsGrid(models, busyModels = []) {
         
         const icon = icons[model.architecture] || icons.default;
         
-        // Badge disponibilità
+        // Availability badge
         const availBadge = model.nodes_count > 1 
             ? `<span class="badge badge-green">${model.nodes_count} nodes</span>`
             : `<span class="badge badge-yellow">1 node</span>`;
@@ -739,11 +739,11 @@ function renderModelsGrid(models, busyModels = []) {
         grid.appendChild(card);
     });
     
-    // Render modelli occupati (in grigio con timer)
+    // Render busy models (greyed out with timer)
     busyModels.forEach(model => {
         const card = document.createElement('div');
         card.className = 'model-card model-busy';
-        // Non cliccabile quando occupato
+        // Not clickable when busy
         card.style.cursor = 'not-allowed';
         
         const icon = icons[model.architecture] || icons.default;
@@ -773,12 +773,12 @@ function renderModelsGrid(models, busyModels = []) {
         grid.appendChild(card);
     });
     
-    // Avvia timer per aggiornare i countdown
+    // Start timers to update countdowns
     startBusyTimers();
 }
 
 function startBusyTimers() {
-    // Aggiorna i timer ogni secondo
+    // Update timers every second
     const timers = document.querySelectorAll('.busy-timer');
     if (timers.length === 0) return;
     
@@ -795,10 +795,10 @@ function startBusyTimers() {
         });
     };
     
-    // Aggiorna ogni secondo
+    // Update every second
     const intervalId = setInterval(() => {
         updateTimers();
-        // Controlla se ci sono ancora timer attivi
+        // Check if there are still active timers
         const activeTimers = document.querySelectorAll('.busy-timer');
         if (activeTimers.length === 0) {
             clearInterval(intervalId);
@@ -812,18 +812,18 @@ function refreshModels() {
 }
 
 // ===========================================
-// Auto-refresh Models (ogni 5 secondi)
+// Auto-refresh Models (every 5 seconds)
 // ===========================================
 function startModelsRefresh() {
-    // Evita duplicati
+    // Avoid duplicates
     if (modelsRefreshInterval) {
         clearInterval(modelsRefreshInterval);
     }
     
-    // Refresh ogni 5 secondi solo quando sulla pagina modelli
+    // Refresh every 5 seconds only when on models page
     modelsRefreshInterval = setInterval(() => {
         const modelsSection = document.getElementById('models-section');
-        // Refresh solo se la sezione modelli è visibile
+        // Refresh only if models section is visible
         if (modelsSection && modelsSection.style.display !== 'none') {
             loadModels();
         }
@@ -843,23 +843,23 @@ function selectModel(model) {
     document.getElementById('models-section').style.display = 'none';
     document.getElementById('session-config').style.display = 'block';
     
-    // Mostra nome modello e nodo
+    // Show model name and node
     let modelDisplay = model.name;
     if (model.hf_repo) {
         modelDisplay += ` (${model.hf_repo})`;
     }
     document.getElementById('selected-model-name').textContent = modelDisplay;
     
-    // Mostra prezzo del nodo
+    // Show node price
     const nodePriceSats = document.getElementById('node-price-sats');
     if (nodePriceSats && selectedNode) {
         nodePriceSats.textContent = selectedNode.price_per_minute || 100;
     }
     
-    // Reset parametri LLM ai valori di default
+    // Reset LLM params to defaults
     resetLLMParams();
     
-    // Imposta context length dal modello (o default 4096)
+    // Set context length from model (or default 4096)
     const modelContext = model.context_length || 100000;
     sessionContextLength = Math.min(modelContext, 100000);
     
@@ -892,7 +892,7 @@ function setupContextSlider() {
 function cancelModelSelection() {
     selectedModel = null;
     document.getElementById('session-config').style.display = 'none';
-    // Torna alla selezione modelli del nodo (non ai nodi)
+    // Back to node's model selection (not to nodes)
     document.getElementById('models-section').style.display = 'block';
 }
 
@@ -1059,7 +1059,7 @@ function updateEstimatedCost() {
     
     const minutes = parseInt(minutesEl.value) || 5;
     
-    // Usa il prezzo del nodo selezionato
+    // Use the selected node's price
     let pricePerMinute = 100; // default
     
     if (selectedNode && selectedNode.price_per_minute) {
@@ -1070,7 +1070,7 @@ function updateEstimatedCost() {
     costEl.textContent = `~${cost} sats`;
 }
 
-// Aggiorna costo quando cambia durata
+// Update cost when duration changes
 document.addEventListener('DOMContentLoaded', () => {
     const minutesInput = document.getElementById('minutes');
     if (minutesInput) {
@@ -1106,10 +1106,10 @@ async function createSession() {
     }
 
     try {
-        // Determina cosa inviare come modello
+        // Determine what to send as model
         let modelToSend = selectedModel.id || selectedModel.name;
         
-        // Se è un modello HuggingFace custom, usa l'hf_repo
+        // If it's a custom HuggingFace model, use hf_repo
         if (selectedModel.hf_repo) {
             modelToSend = selectedModel.hf_repo;
         }
@@ -1122,7 +1122,7 @@ async function createSession() {
             },
             body: JSON.stringify({
                 model: modelToSend,
-                node_id: selectedNode.node_id,  // Specifica il nodo
+                node_id: selectedNode.node_id,  // Specify the node
                 minutes: minutes,
                 context_length: sessionContextLength,
                 hf_repo: selectedModel.hf_repo || null  // Se HuggingFace custom
@@ -1137,7 +1137,7 @@ async function createSession() {
             throw new Error(data.error || 'Failed to create session');
         }
 
-        // IMPORTANTE: Salva session_id PRIMA di tutto il resto
+        // IMPORTANT: Save session_id BEFORE everything else
         currentSession = data.session_id;
         currentInvoiceAmount = data.amount;
         localStorage.setItem('sessionId', currentSession);
@@ -1161,14 +1161,14 @@ async function createSession() {
             walletOption.style.display = 'none';
         }
         
-        // Genera QR code (può fallire senza bloccare)
+        // Generate QR code (can fail without blocking)
         try {
             generateQRCode(data.invoice);
         } catch (qrError) {
             console.error('QR code generation failed:', qrError);
         }
         
-        // Avvia polling automatico per verificare pagamento
+        // Start automatic polling to verify payment
         startPaymentPolling();
         
     } catch (error) {
@@ -1183,7 +1183,7 @@ function generateQRCode(invoice) {
     // Pulisci QR precedente
     qrContainer.innerHTML = '';
     
-    // Usa il prefisso lightning: per compatibilità con i wallet
+    // Use lightning: prefix for wallet compatibility
     const lightningUri = `lightning:${invoice.toUpperCase()}`;
     
     try {
@@ -1224,7 +1224,7 @@ function copyInvoice() {
 // Payment Functions
 // ===========================================
 
-// Paga dal wallet interno
+// Pay from internal wallet
 async function payFromWallet() {
     if (!currentSession) {
         showError('No active session');
@@ -1252,16 +1252,16 @@ async function payFromWallet() {
             return;
         }
         
-        // Pagamento riuscito!
+        // Payment successful!
         showSuccess(`Paid ${data.amount_paid.toLocaleString()} sats from wallet`);
         
-        // Aggiorna balance display
+        // Update balance display
         updateBalanceDisplay(data.new_balance);
         
-        // Ferma polling
+        // Stop polling
         stopPaymentPolling();
         
-        // Avvia sessione
+        // Start session
         startSessionAfterPayment();
         
     } catch (error) {
@@ -1269,14 +1269,14 @@ async function payFromWallet() {
     }
 }
 
-// Avvia polling per verificare pagamento Lightning
+// Start polling to verify Lightning payment
 function startPaymentPolling() {
-    // Ferma polling precedente se esiste
+    // Stop previous polling if exists
     stopPaymentPolling();
     
     console.log('Starting payment polling for session:', currentSession);
     
-    // Controlla ogni 3 secondi
+    // Check every 3 seconds
     paymentPollingInterval = setInterval(async () => {
         if (!currentSession) {
             console.log('No currentSession, stopping polling');
@@ -1297,7 +1297,7 @@ function startPaymentPolling() {
                 console.log('Payment check result:', data);
                 
                 if (data.paid) {
-                    // Pagamento ricevuto!
+                    // Payment received!
                     console.log('Payment confirmed! Starting session...');
                     stopPaymentPolling();
                     showSuccess('Payment received!');
@@ -1320,7 +1320,7 @@ function stopPaymentPolling() {
     }
 }
 
-// Avvia sessione dopo pagamento confermato
+// Start session after payment confirmed
 function startSessionAfterPayment() {
     console.log('Starting session after payment, currentSession:', currentSession);
     
@@ -1369,9 +1369,9 @@ function checkPayment() {
     socket.emit('start_session', {session_id: currentSession});
 }
 
-// Mostra overlay di caricamento con opzione skip e stato aggiornabile
+// Show loading overlay with skip option and updatable status
 function showLoadingOverlay(message) {
-    // Rimuovi overlay precedente se esiste
+    // Remove previous overlay if exists
     hideLoadingOverlay();
     
     const overlay = document.createElement('div');
@@ -1396,7 +1396,7 @@ function showLoadingOverlay(message) {
     }, 1000);
 }
 
-// Aggiorna messaggio e status dell'overlay di caricamento
+// Update message and status of the loading overlay
 function updateLoadingOverlay(message, status) {
     const msgEl = document.getElementById('loading-message');
     const statusEl = document.getElementById('loading-status');
@@ -1407,11 +1407,11 @@ function updateLoadingOverlay(message, status) {
     if (statusEl) {
         statusEl.textContent = status || '';
         
-        // Colore in base allo stato
+        // Color based on status
         if (status && status.toLowerCase().includes('download')) {
-            statusEl.style.color = '#f7931a';  // Arancione per download
+            statusEl.style.color = '#f7931a';  // Orange for download
         } else if (status && status.toLowerCase().includes('loading')) {
-            statusEl.style.color = '#00d4ff';  // Azzurro per caricamento
+            statusEl.style.color = '#00d4ff';  // Blue for loading
         } else if (status && status.toLowerCase().includes('ready')) {
             statusEl.style.color = '#00ff88';  // Verde per pronto
         }
@@ -1433,7 +1433,7 @@ function skipLoading() {
 }
 
 function cancelPayment() {
-    // Ferma polling
+    // Stop polling
     stopPaymentPolling();
     
     currentSession = null;
@@ -1456,25 +1456,25 @@ function startChatUI() {
     currentStreamingMessageId = null;
     streamingContent = '';
     
-    // Segna sessione come attiva (blocca navigazione)
+    // Mark session as active (blocks navigation)
     sessionActive = true;
     
     document.getElementById('prompt').disabled = false;
     document.getElementById('send-btn').disabled = false;
     document.getElementById('prompt').focus();
     
-    // Pulisci chat
+    // Clear chat
     document.getElementById('chat').innerHTML = '<div class="message system">Session started! You can now chat with the AI.</div>';
 }
 
 function endSession() {
     if (confirm('Are you sure you want to end this session? This will stop the AI model on the node.')) {
-        // Invia end_session al server per fermare llama-server sul nodo
+        // Send end_session to server to stop llama-server on node
         if (socket && currentSession) {
             socket.emit('end_session', { session_id: currentSession });
         }
         
-        // Libera sessione - permetti navigazione
+        // Free session - allow navigation
         sessionActive = false;
         
         currentSession = null;
@@ -1496,7 +1496,7 @@ function endSession() {
 // Socket.IO
 // ===========================================
 
-// Variabile per tracciare il messaggio in streaming corrente
+// Variable to track current streaming message
 let currentStreamingMessageId = null;
 let streamingContent = '';
 
@@ -1529,7 +1529,7 @@ function connectSocket() {
         addMessage('System', `Connected to node ${data.node_id}. Model ready!`);
     });
     
-    // Aggiornamenti stato caricamento modello
+    // Model loading status updates
     socket.on('model_status', (data) => {
         const status = data.status;
         const message = data.message;
@@ -1556,6 +1556,15 @@ function connectSocket() {
                 displayMessage = '⏳ Preparing model...';
                 displayStatus = message;
                 break;
+            case 'error':
+                displayMessage = '❌ Error loading model';
+                displayStatus = message || 'Please try again with a different model.';
+                // Hide overlay and show error after a brief delay
+                setTimeout(() => {
+                    hideLoadingOverlay();
+                    alert('Error loading model: ' + (message || 'Unknown error'));
+                }, 1500);
+                return;
             default:
                 displayStatus = message || status;
         }
@@ -1569,26 +1578,26 @@ function connectSocket() {
         enableInput();
     });
 
-    // Streaming: ricevi token singoli
+    // Streaming: receive individual tokens
     socket.on('ai_token', (data) => {
         const token = data.token;
         const isFinal = data.is_final;
         
         console.log('ai_token received:', {token: token.substring(0, 20), isFinal});
         
-        // Rimuovi loading indicator alla prima token
+        // Remove loading indicator on first token
         if (!currentStreamingMessageId) {
             removeLoadingIndicator();
             currentStreamingMessageId = createStreamingMessage();
             streamingContent = '';
         }
         
-        // Aggiungi token al contenuto
+        // Add token to content
         streamingContent += token;
         updateStreamingMessage(currentStreamingMessageId, streamingContent);
         
         if (isFinal) {
-            // Token finale ricevuto - finalizza il messaggio
+            // Final token received - finalize the message
             console.log('Final token received, finalizing...');
             if (currentStreamingMessageId) {
                 finalizeStreamingMessage(currentStreamingMessageId, streamingContent);
@@ -1604,12 +1613,12 @@ function connectSocket() {
         removeLoadingIndicator();
         
         if (data.streaming_complete && currentStreamingMessageId) {
-            // Streaming completato - aggiorna con contenuto pulito finale
+            // Streaming completed - update with final clean content
             finalizeStreamingMessage(currentStreamingMessageId, data.response);
             currentStreamingMessageId = null;
             streamingContent = '';
         } else if (!currentStreamingMessageId) {
-            // Risposta non-streaming normale
+            // Normal non-streaming response
             addMessage('AI', data.response);
         }
         
@@ -1640,14 +1649,14 @@ function connectSocket() {
 
     socket.on('session_ended', (data) => {
         console.log('Session ended by server');
-        // La sessione è stata chiusa (potrebbe essere stata chiusa dal server)
+        // Session was closed (may have been closed by server)
         addMessage('System', 'Session ended. The AI model has been stopped.');
     });
     
-    // Evento: un nodo è stato liberato, aggiorna la lista modelli
+    // Event: a node was freed, update the models list
     socket.on('node_freed', (data) => {
         console.log('Node freed:', data.node_id);
-        // Ricarica modelli per aggiornare disponibilità
+        // Reload models to update availability
         loadModels();
     });
 
@@ -1680,7 +1689,7 @@ function sendMessage() {
     
     addLoadingIndicator();
 
-    // Invia messaggio con tutti i parametri LLM configurati
+    // Send message with all configured LLM parameters
     const params = getLLMParams();
     socket.emit('chat_message', {
         session_id: currentSession,
@@ -1895,7 +1904,7 @@ function formatMessage(text) {
     // Newlines
     escaped = escaped.replace(/\n/g, '<br>');
     
-    // Ripristina i blocchi LaTeX con rendering KaTeX
+    // Restore LaTeX blocks with KaTeX rendering
     for (let i = 0; i < latexBlocks.length; i++) {
         const block = latexBlocks[i];
         const placeholder = `%%LATEX_BLOCK_${i}%%`;
@@ -1909,14 +1918,14 @@ function formatMessage(text) {
                 });
                 escaped = escaped.replace(placeholder, rendered);
             } else {
-                // Fallback se KaTeX non è caricato
+                // Fallback if KaTeX not loaded
                 const wrapper = block.type === 'display' 
                     ? `<div class="math-display">\\[${block.content}\\]</div>`
                     : `<span class="math-inline">\\(${block.content}\\)</span>`;
                 escaped = escaped.replace(placeholder, wrapper);
             }
         } catch (e) {
-            // In caso di errore, mostra il LaTeX raw
+            // In case of error, show raw LaTeX
             escaped = escaped.replace(placeholder, `<code class="latex-error">${block.content}</code>`);
         }
     }
@@ -1937,7 +1946,7 @@ function showNodesInfo() {
         list.innerHTML = '<p>No nodes online</p>';
     } else {
         list.innerHTML = onlineNodes.map(node => {
-            // Formatta RAM con tipo e velocità
+            // Format RAM with type and speed
             let ramStr = `${node.hardware?.ram_gb || 0} GB`;
             if (node.hardware?.ram_type && node.hardware.ram_type !== 'Unknown') {
                 ramStr += ` ${node.hardware.ram_type}`;
@@ -1974,7 +1983,7 @@ function closeNodesModal() {
     if (modal) modal.style.display = 'none';
 }
 
-// Chiudi modal cliccando fuori
+// Close modal by clicking outside
 window.onclick = function(event) {
     const modal = document.getElementById('nodes-modal');
     if (event.target === modal) {
@@ -2112,7 +2121,7 @@ async function loadWalletTransactions(page = 1) {
         if (loading) loading.style.display = 'none';
         
         if (!res.ok) {
-            // Se errore server, mostra "no transactions" invece di errore
+            // If server error, show "no transactions" instead of error
             list.innerHTML = '<p class="no-data">📭 No transactions yet</p>';
             if (pagination) pagination.innerHTML = '';
             return;

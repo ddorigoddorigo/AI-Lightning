@@ -1,7 +1,7 @@
 """
-Interfaccia con Lightning Network tramite LND REST API.
+Lightning Network interface via LND REST API.
 
-Usa l'API REST invece di gRPC per evitare problemi di compatibilità protobuf.
+Uses REST API instead of gRPC to avoid protobuf compatibility issues.
 """
 import os
 import base64
@@ -11,7 +11,7 @@ import urllib3
 import hashlib
 import time
 
-# Disabilita warning SSL per certificati self-signed
+# Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class LightningManager:
     def __init__(self, config):
         """
-        Inizializza connessione con LND via REST API.
+        Initialize connection with LND via REST API.
         
         Args:
             config: Flask config object or dict with LND settings
@@ -37,17 +37,17 @@ class LightningManager:
             self._setup_connection()
         
     def _setup_connection(self):
-        """Configura i parametri di connessione."""
-        # URL REST di LND (default porta 8080)
+        """Configure connection parameters."""
+        # LND REST URL (default port 8080)
         lnd_rest_host = self.config.get('LND_REST_HOST', 'https://localhost:8080')
         self._base_url = lnd_rest_host.rstrip('/')
         
-        # Percorso certificato TLS
+        # TLS certificate path
         self._cert_path = os.path.expanduser(
             self.config.get('LND_CERT_PATH', '~/.lnd/tls.cert')
         )
         
-        # Leggi macaroon e converti in hex
+        # Read macaroon and convert to hex
         network = self.config.get('LND_NETWORK', 'testnet')
         macaroon_path = os.path.expanduser(
             self.config.get('LND_MACAROON_PATH', f'~/.lnd/data/chain/bitcoin/{network}/admin.macaroon')
@@ -62,14 +62,14 @@ class LightningManager:
             self._macaroon = None
     
     def _get_headers(self):
-        """Restituisce headers per le richieste REST."""
+        """Return headers for REST requests."""
         return {
             'Grpc-Metadata-macaroon': self._macaroon,
             'Content-Type': 'application/json'
         }
     
     def _request(self, method, endpoint, data=None):
-        """Esegue una richiesta REST a LND."""
+        """Execute a REST request to LND."""
         if not self._macaroon:
             raise Exception("LND macaroon not configured")
         
@@ -103,11 +103,11 @@ class LightningManager:
 
     def create_invoice(self, amount_sat, memo):
         """
-        Crea una fattura Lightning.
+        Create a Lightning invoice.
 
         Args:
-            amount_sat: Importo in satoshis
-            memo: Descrizione della fattura
+            amount_sat: Amount in satoshis
+            memo: Invoice description
 
         Returns:
             dict: {'payment_request': str, 'r_hash': str, 'amount': int}
@@ -126,12 +126,12 @@ class LightningManager:
         data = {
             'value': str(amount_sat),
             'memo': memo,
-            'expiry': '3600'  # 1 ora
+            'expiry': '3600'  # 1 hour
         }
         
         response = self._request('POST', '/v1/invoices', data)
         
-        # r_hash è in base64, convertiamo in hex
+        # r_hash is in base64, convert to hex
         r_hash_b64 = response.get('r_hash', '')
         r_hash_hex = base64.b64decode(r_hash_b64).hex() if r_hash_b64 else ''
         
@@ -143,13 +143,13 @@ class LightningManager:
 
     def check_payment(self, r_hash):
         """
-        Verifica stato di un pagamento.
+        Check payment status.
 
         Args:
-            r_hash: Hash del pagamento (hex string)
+            r_hash: Payment hash (hex string)
 
         Returns:
-            bool: True se pagato
+            bool: True if paid
         """
         # TEST MODE: pagamenti sempre confermati
         if self._test_mode:
@@ -157,7 +157,7 @@ class LightningManager:
             return True
         
         try:
-            # Converti hex a base64 URL-safe
+            # Convert hex to URL-safe base64
             r_hash_bytes = bytes.fromhex(r_hash)
             r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
             
@@ -172,7 +172,7 @@ class LightningManager:
             return False
 
     def get_invoice(self, r_hash):
-        """Recupera dettagli di una fattura."""
+        """Retrieve invoice details."""
         if self._test_mode:
             return {'state': 'SETTLED', 'r_hash': r_hash, 'value': '10000'}
         r_hash_bytes = bytes.fromhex(r_hash)
@@ -181,21 +181,21 @@ class LightningManager:
     
     def get_invoice_amount(self, r_hash):
         """
-        Recupera l'importo di una fattura.
+        Retrieve invoice amount.
         
         Args:
-            r_hash: Hash del pagamento (hex string)
+            r_hash: Payment hash (hex string)
             
         Returns:
-            int: Importo in satoshis, o None se non trovata
+            int: Amount in satoshis, or None if not found
         """
         try:
             if self._test_mode:
-                # In test mode, usa un valore di default
+                # In test mode, use a default value
                 return 10000
             
             invoice = self.get_invoice(r_hash)
-            # value può essere stringa o int
+            # value can be string or int
             value = invoice.get('value', invoice.get('amt_paid_sat', 0))
             return int(value) if value else None
             
@@ -205,7 +205,7 @@ class LightningManager:
     
     def pay_invoice(self, payment_request):
         """
-        Paga una fattura Lightning.
+        Pay a Lightning invoice.
         
         Args:
             payment_request: BOLT11 invoice string
@@ -237,19 +237,19 @@ class LightningManager:
             return {'success': False, 'error': str(e)}
     
     def get_info(self):
-        """Ottiene informazioni sul nodo LND."""
+        """Get LND node information."""
         if self._test_mode:
             return {'alias': 'TEST_NODE', 'synced_to_chain': True, 'version': 'test'}
         return self._request('GET', '/v1/getinfo')
     
     def get_balance(self):
-        """Ottiene il bilancio del wallet."""
+        """Get wallet balance."""
         if self._test_mode:
             return {'total_balance': '1000000', 'confirmed_balance': '1000000'}
         return self._request('GET', '/v1/balance/blockchain')
     
     def is_synced(self):
-        """Verifica se LND è sincronizzato con la chain."""
+        """Check if LND is synced with the chain."""
         try:
             info = self.get_info()
             return info.get('synced_to_chain', False)
@@ -257,5 +257,5 @@ class LightningManager:
             return False
     
     def close(self):
-        """Chiude la connessione (no-op per REST)."""
+        """Close the connection (no-op for REST)."""
         pass

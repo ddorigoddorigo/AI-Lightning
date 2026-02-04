@@ -12,7 +12,7 @@ import logging
 import httpx
 from .node_config import Config
 
-# Configurazione logging
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -28,7 +28,7 @@ shutdown_event = threading.Event()
 
 
 def find_available_port():
-    """Trova una porta disponibile nel range configurato."""
+    """Find an available port in the configured range."""
     with port_lock:
         for port in range(config.port_range[0], config.port_range[1]):
             try:
@@ -187,7 +187,7 @@ def start_session():
         server_ready = False
         for attempt in range(60):  # Max 60 secondi
             try:
-                # llama.cpp server espone /health quando è pronto
+                # llama.cpp server exposes /health when ready
                 health_check = httpx.get(f"http://localhost:{port}/health", timeout=1)
                 if health_check.status_code == 200:
                     server_ready = True
@@ -314,8 +314,8 @@ def completion(session_id):
         return jsonify({'error': 'Prompt is required'}), 400
     
     try:
-        # Chiama llama.cpp server con il formato corretto dell'API
-        # Riferimento: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
+        # Call llama.cpp server with correct API format
+        # Reference: https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md
         llama_response = httpx.post(
             f"http://localhost:{info['port']}/completion",
             json={
@@ -325,7 +325,7 @@ def completion(session_id):
                 'stop': data.get('stop', []),
                 'stream': False
             },
-            timeout=180  # 3 minuti timeout per generazioni lunghe
+            timeout=180  # 3 minutes timeout for long generations
         )
         
         if llama_response.status_code != 200:

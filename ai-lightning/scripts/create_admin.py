@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Script per creare un utente admin.
+Script to create an admin user.
 
 Usage:
     python scripts/create_admin.py <username> <password>
@@ -17,20 +17,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def create_admin(username: str, password: str) -> bool:
     """
-    Crea un utente admin nel database.
+    Create an admin user in the database.
     
     Args:
-        username: Nome utente
+        username: Username
         password: Password
         
     Returns:
-        True se creato con successo
+        True if created successfully
     """
     from server.app import app, db
     from server.models import User
     
     with app.app_context():
-        # Verifica se l'utente esiste già
+        # Check if user already exists
         existing = User.query.filter_by(username=username).first()
         if existing:
             print(f"Error: User '{username}' already exists")
@@ -41,7 +41,7 @@ def create_admin(username: str, password: str) -> bool:
                 return True
             return False
         
-        # Crea nuovo admin
+        # Create new admin
         user = User(username=username, is_admin=True)
         user.set_password(password)
         db.session.add(user)
@@ -60,7 +60,7 @@ def main():
     username = sys.argv[1]
     password = sys.argv[2]
     
-    # Validazione base
+    # Basic validation
     if len(username) < 3:
         print("Error: Username must be at least 3 characters")
         sys.exit(1)

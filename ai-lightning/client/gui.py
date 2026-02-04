@@ -1,7 +1,7 @@
 """
-Interfaccia utente per il client desktop.
+User interface for the desktop client.
 
-Usa Tkinter per un'interfaccia nativa.
+Uses Tkinter for a native interface.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
@@ -11,20 +11,20 @@ from configparser import ConfigParser
 
 class GUI:
     def __init__(self):
-        # Configurazione
+        # Configuration
         self.config = ConfigParser()
         self.config.read('config.ini')
         self.token = None
         self.current_session = None
 
-        # Creazione finestra
+        # Create window
         self.root = tk.Tk()
         self.root.title("AI Lightning")
         self.root.geometry("800x600")
         if hasattr(self.root, 'wm_iconbitmap'):
             self.root.iconbitmap('assets/logo.ico')
 
-        # Stile
+        # Style
         self.style = ThemedStyle(self.root)
         self.style.theme_use(self.config.get('UI', 'Theme', fallback='dark'))
 
@@ -97,17 +97,17 @@ class GUI:
         self.menu.add_cascade(label="File", menu=settings_menu)
 
     def login(self):
-        """Gestisce login utente."""
+        """Handle user login."""
         # Implementa login via API
         pass
 
     def register(self):
-        """Gestisce registrazione utente."""
+        """Handle user registration."""
         # Implementa registrazione via API
         pass
 
     def create_session(self):
-        """Crea una nuova sessione."""
+        """Create a new session."""
         if not hasattr(self, 'socket_client') or not self.token:
             messagebox.showerror("Error", "Not logged in")
             return
@@ -130,7 +130,7 @@ class GUI:
             messagebox.showerror("Error", str(e))
 
     def check_payment(self):
-        """Verifica pagamento e avvia sessione."""
+        """Verify payment and start session."""
         if not self.current_session:
             messagebox.showerror("Error", "No active session")
             return
@@ -140,7 +140,7 @@ class GUI:
         })
 
     def send_message(self, event=None):
-        """Invia un messaggio."""
+        """Send a message."""
         if not self.current_session:
             messagebox.showerror("Error", "No active session")
             return
@@ -159,7 +159,7 @@ class GUI:
         )
 
     def end_session(self):
-        """Termina la sessione."""
+        """End the session."""
         if not self.current_session:
             messagebox.showerror("Error", "No active session")
             return
@@ -176,38 +176,38 @@ class GUI:
         self.invoice_label.config(text="Pay a Lightning invoice to start")
 
     def add_message(self, sender, text):
-        """Aggiunge un messaggio alla chat."""
+        """Add a message to the chat."""
         self.chat_area.config(state='normal')
         self.chat_area.insert(tk.END, f"{sender}: {text}\n")
         self.chat_area.config(state='disabled')
         self.chat_area.yview(tk.END)
 
     def show_chat(self):
-        """Mostra l'interfaccia di chat."""
+        """Show the chat interface."""
         self.login_frame.pack_forget()
         self.chat_frame.pack(fill=tk.BOTH, expand=True)
         self.add_message("System", "Ready! Buy a session to start chatting.")
 
     def show_login(self):
-        """Mostra l'interfaccia di login."""
+        """Show the login interface."""
         self.chat_frame.pack_forget()
         self.login_frame.pack(fill=tk.BOTH, expand=True)
 
     def settings(self):
-        """Apri il pannello impostazioni."""
+        """Open settings panel."""
         # Implementa pannello impostazioni
         pass
 
     def about(self):
-        """Mostra informazioni sull'applicazione."""
+        """Show application information."""
         messagebox.showinfo("About", "AI Lightning Windows Client\nVersion 1.0")
 
     def post(self, endpoint, data):
-        """Helper per chiamate HTTP."""
+        """Helper for HTTP calls."""
         import httpx
         headers = {'Authorization': f'Bearer {self.token}'}
         return httpx.post(f"{self.config.get('Server', 'API_URL')}/{endpoint}", json=data, headers=headers)
 
     def run(self):
-        """Avvia l'interfaccia."""
+        """Start the interface."""
         self.root.mainloop()

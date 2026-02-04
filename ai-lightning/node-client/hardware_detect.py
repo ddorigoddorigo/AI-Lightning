@@ -1,7 +1,7 @@
 """
 Hardware detection module for AI Lightning Node Client.
 
-Rileva CPU, RAM, GPU e VRAM del sistema.
+Detects CPU, RAM, GPU and VRAM of the system.
 """
 import os
 import sys
@@ -14,7 +14,7 @@ logger = logging.getLogger('HardwareDetect')
 
 
 def get_cpu_info():
-    """Rileva informazioni sulla CPU."""
+    """Detect CPU information."""
     info = {
         'cores_physical': 1,
         'cores_logical': 1,
@@ -78,7 +78,7 @@ def get_cpu_info():
 
 
 def get_ram_info():
-    """Rileva quantità e velocità della RAM."""
+    """Detect RAM quantity and speed."""
     result = {
         'total_gb': 0,
         'available_gb': 0,
@@ -110,7 +110,7 @@ def get_ram_info():
             result['total_gb'] = round(stat.ullTotalPhys / (1024**3), 1)
             result['available_gb'] = round(stat.ullAvailPhys / (1024**3), 1)
             
-            # Rileva velocità RAM su Windows con wmic
+            # Detect RAM speed on Windows with wmic
             try:
                 speed_result = subprocess.run(
                     ['wmic', 'memorychip', 'get', 'speed'],
@@ -122,11 +122,11 @@ def get_ram_info():
                     if line.isdigit():
                         speeds.append(int(line))
                 if speeds:
-                    result['speed_mhz'] = max(speeds)  # Usa la velocità più alta
+                    result['speed_mhz'] = max(speeds)  # Use the highest speed
             except:
                 pass
             
-            # Rileva tipo RAM (DDR3, DDR4, DDR5)
+            # Detect RAM type (DDR3, DDR4, DDR5)
             try:
                 type_result = subprocess.run(
                     ['wmic', 'memorychip', 'get', 'SMBIOSMemoryType'],
@@ -151,7 +151,7 @@ def get_ram_info():
                 pass
                 
         else:
-            # Linux - quantità RAM
+            # Linux - RAM quantity
             with open('/proc/meminfo', 'r') as f:
                 meminfo = f.read()
             
@@ -165,7 +165,7 @@ def get_ram_info():
             result['total_gb'] = round(total, 1)
             result['available_gb'] = round(available, 1)
             
-            # Velocità RAM su Linux con dmidecode (richiede root)
+            # RAM speed on Linux with dmidecode (requires root)
             try:
                 speed_result = subprocess.run(
                     ['sudo', 'dmidecode', '-t', 'memory'],
@@ -189,7 +189,7 @@ def get_ram_info():
 
 
 def get_nvidia_gpus():
-    """Rileva GPU NVIDIA con nvidia-smi."""
+    """Detect NVIDIA GPUs with nvidia-smi."""
     gpus = []
     try:
         result = subprocess.run(
@@ -221,10 +221,10 @@ def get_nvidia_gpus():
 
 
 def get_amd_gpus_windows():
-    """Rileva GPU AMD su Windows."""
+    """Detect AMD GPUs on Windows."""
     gpus = []
     try:
-        # Usa WMI per rilevare GPU AMD
+        # Use WMI to detect AMD GPUs
         result = subprocess.run(
             ['wmic', 'path', 'win32_VideoController', 'get', 
              'Name,AdapterRAM,DriverVersion', '/format:csv'],
@@ -245,10 +245,10 @@ def get_amd_gpus_windows():
                         'index': len(gpus),
                         'name': parts[2] if len(parts) > 2 else 'AMD GPU',
                         'vram_total_mb': vram,
-                        'vram_free_mb': vram,  # Non possiamo saperlo senza ROCm
+                        'vram_free_mb': vram,  # We can't know without ROCm
                         'driver': parts[3] if len(parts) > 3 else 'Unknown',
                         'type': 'amd',
-                        'rocm': False,  # Verificare se ROCm è installato
+                        'rocm': False,  # Check if ROCm is installed
                         'vulkan': True
                     })
     except Exception as e:
@@ -258,7 +258,7 @@ def get_amd_gpus_windows():
 
 
 def get_amd_gpus_linux():
-    """Rileva GPU AMD su Linux con ROCm."""
+    """Detect AMD GPUs on Linux with ROCm."""
     gpus = []
     try:
         result = subprocess.run(
@@ -287,25 +287,25 @@ def get_amd_gpus_linux():
 
 
 def get_gpu_info():
-    """Rileva tutte le GPU del sistema."""
+    """Detect all system GPUs."""
     gpus = []
     
-    # Prova NVIDIA
+    # Try NVIDIA
     nvidia_gpus = get_nvidia_gpus()
     gpus.extend(nvidia_gpus)
     
-    # Prova AMD
+    # Try AMD
     if sys.platform == 'win32':
         amd_gpus = get_amd_gpus_windows()
     else:
         amd_gpus = get_amd_gpus_linux()
     
-    # Aggiungi solo se non già trovate
+    # Add only if not already found
     for gpu in amd_gpus:
         if not any(g['name'] == gpu['name'] for g in gpus):
             gpus.append(gpu)
     
-    # Se nessuna GPU trovata, fallback a WMI/lspci
+    # If no GPU found, fallback to WMI/lspci
     if not gpus:
         try:
             if sys.platform == 'win32':
@@ -327,7 +327,7 @@ def get_gpu_info():
                             
                             name = parts[1] if len(parts) > 1 else 'Unknown GPU'
                             
-                            # Determina tipo
+                            # Determine type
                             gpu_type = 'unknown'
                             if 'nvidia' in name.lower() or 'geforce' in name.lower():
                                 gpu_type = 'nvidia'
@@ -362,13 +362,13 @@ def get_gpu_info():
 
 
 def get_disk_info(path=None):
-    """Rileva spazio disco disponibile.
+    """Detect available disk space.
     
     Args:
-        path: Path da controllare (default: directory corrente o home)
+        path: Path to check (default: current directory or home)
         
     Returns:
-        dict con total_gb, free_gb, used_gb, percent_used
+        dict with total_gb, free_gb, used_gb, percent_used
     """
     info = {
         'total_gb': 0,
@@ -380,7 +380,7 @@ def get_disk_info(path=None):
     try:
         import shutil
         
-        # Usa la directory specificata, o la home, o la directory corrente
+        # Use specified directory, or home, or current directory
         if not path:
             path = os.path.expanduser('~')
         
@@ -398,7 +398,7 @@ def get_disk_info(path=None):
 
 
 def get_system_info():
-    """Rileva tutte le informazioni hardware del sistema."""
+    """Detect all system hardware information."""
     info = {
         'platform': platform.system(),
         'platform_release': platform.release(),
@@ -409,20 +409,20 @@ def get_system_info():
         'disk': get_disk_info()
     }
     
-    # Calcola VRAM totale
+    # Calculate total VRAM
     total_vram = sum(gpu.get('vram_total_mb', 0) for gpu in info['gpus'])
     info['total_vram_mb'] = total_vram
     
-    # Determina capacità massima del modello (approssimativa)
-    # ~1GB VRAM per 1B parametri in Q4
+    # Determine maximum model capacity (approximate)
+    # ~1GB VRAM per 1B parameters in Q4
     info['max_model_params_b'] = round(total_vram / 1000, 1) if total_vram > 0 else 0
     
     return info
 
 
 def format_system_info(info):
-    """Formatta le info di sistema in stringa leggibile."""
-    # Formatta info RAM con velocità
+    """Format system info into readable string."""
+    # Format RAM info with speed
     ram_info = info['ram']
     ram_str = f"{ram_info['total_gb']} GB"
     if ram_info.get('type') and ram_info['type'] != 'Unknown':
@@ -431,29 +431,29 @@ def format_system_info(info):
         ram_str += f"-{ram_info['speed_mhz']}"
     
     lines = [
-        f"Sistema: {info['platform']} {info['platform_release']} ({info['architecture']})",
+        f"System: {info['platform']} {info['platform_release']} ({info['architecture']})",
         f"",
         f"CPU: {info['cpu']['name']}",
-        f"  - Core fisici: {info['cpu']['cores_physical']}",
-        f"  - Core logici: {info['cpu']['cores_logical']}",
+        f"  - Physical cores: {info['cpu']['cores_physical']}",
+        f"  - Logical cores: {info['cpu']['cores_logical']}",
         f"",
-        f"RAM: {ram_str} ({ram_info['available_gb']} GB disponibili)",
+        f"RAM: {ram_str} ({ram_info['available_gb']} GB available)",
         f""
     ]
     
     if info['gpus']:
-        lines.append(f"GPU ({len(info['gpus'])} rilevate):")
+        lines.append(f"GPU ({len(info['gpus'])} detected):")
         for gpu in info['gpus']:
             vram_gb = gpu.get('vram_total_mb', 0) / 1024
             lines.append(f"  [{gpu['index']}] {gpu['name']}")
             lines.append(f"      VRAM: {vram_gb:.1f} GB ({gpu.get('vram_total_mb', 0)} MB)")
-            lines.append(f"      Tipo: {gpu.get('type', 'unknown').upper()}")
+            lines.append(f"      Type: {gpu.get('type', 'unknown').upper()}")
     else:
-        lines.append("GPU: Nessuna GPU rilevata (verrà usata la CPU)")
+        lines.append("GPU: No GPU detected (CPU will be used)")
     
     lines.append(f"")
-    lines.append(f"VRAM Totale: {info['total_vram_mb']} MB")
-    lines.append(f"Modello max stimato: ~{info['max_model_params_b']}B parametri (Q4)")
+    lines.append(f"Total VRAM: {info['total_vram_mb']} MB")
+    lines.append(f"Max estimated model: ~{info['max_model_params_b']}B parameters (Q4)")
     
     return '\n'.join(lines)
 

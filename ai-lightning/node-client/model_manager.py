@@ -132,7 +132,7 @@ def parse_model_name(filename: str) -> Dict:
 
 
 def calculate_file_hash(filepath: str, chunk_size: int = 8192) -> str:
-    """Calcola hash MD5 del file (primi 10MB per velocità)."""
+    """Calculate MD5 hash of file (first 10MB for speed)."""
     hasher = hashlib.md5()
     max_bytes = 10 * 1024 * 1024  # 10MB
     bytes_read = 0
@@ -145,7 +145,7 @@ def calculate_file_hash(filepath: str, chunk_size: int = 8192) -> str:
             hasher.update(chunk)
             bytes_read += len(chunk)
     
-    # Aggiungi size per unicità
+    # Add size for uniqueness
     size = os.path.getsize(filepath)
     hasher.update(str(size).encode())
     
@@ -240,7 +240,7 @@ class ModelManager:
         }
     
     def get_models_total_size(self) -> int:
-        """Calcola dimensione totale dei modelli locali in bytes."""
+        """Calculate total size of local models in bytes."""
         total = 0
         for model in self.models.values():
             if not model.is_huggingface and model.filepath and os.path.exists(model.filepath):
@@ -249,13 +249,13 @@ class ModelManager:
     
     def get_unused_models(self, days_threshold: int = 30) -> List[ModelInfo]:
         """
-        Ottieni lista modelli non usati da più di X giorni.
+        Get list of models not used for more than X days.
         
         Args:
-            days_threshold: Numero di giorni di inattività
+            days_threshold: Number of days of inactivity
             
         Returns:
-            Lista modelli ordinati per ultimo utilizzo (più vecchi prima)
+            List of models sorted by last use (oldest first)
         """
         from datetime import timedelta
         threshold_date = datetime.now() - timedelta(days=days_threshold)
@@ -279,7 +279,7 @@ class ModelManager:
             else:
                 unused.append(model)  # Mai usato
         
-        # Ordina per ultimo utilizzo (più vecchi prima)
+        # Sort by last use (oldest first)
         unused.sort(key=lambda m: m.last_used or '1970-01-01')
         return unused
     
@@ -348,14 +348,14 @@ class ModelManager:
         return deleted
     
     def mark_model_used(self, model_id: str):
-        """Segna un modello come usato (aggiorna timestamp e contatore)."""
+        """Mark a model as used (update timestamp and counter)."""
         if model_id in self.models:
             self.models[model_id].last_used = datetime.now().isoformat()
             self.models[model_id].use_count += 1
             self.save_config()
     
     def load_config(self):
-        """Carica configurazione modelli salvata."""
+        """Load saved model configuration."""
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
@@ -367,7 +367,7 @@ class ModelManager:
                 logger.error(f"Error loading config: {e}")
     
     def save_config(self):
-        """Salva configurazione modelli."""
+        """Save model configuration."""
         try:
             data = {
                 'models': {k: asdict(v) for k, v in self.models.items()},
@@ -380,7 +380,7 @@ class ModelManager:
             logger.error(f"Error saving config: {e}")
     
     def scan_models(self) -> List[ModelInfo]:
-        """Scansiona directory per file GGUF."""
+        """Scan directory for GGUF files."""
         found_models = []
         
         if not os.path.exists(self.models_dir):
@@ -392,10 +392,10 @@ class ModelManager:
                 filepath = os.path.join(self.models_dir, filename)
                 
                 try:
-                    # Calcola hash
+                    # Calculate hash
                     model_id = calculate_file_hash(filepath)
                     
-                    # Se già presente, aggiorna solo il path
+                    # If already present, only update the path
                     if model_id in self.models:
                         self.models[model_id].filepath = filepath
                         found_models.append(self.models[model_id])
@@ -435,7 +435,7 @@ class ModelManager:
                 except Exception as e:
                     logger.error(f"Error scanning {filename}: {e}")
         
-        # Rimuovi modelli non più presenti
+        # Remove models no longer present
         to_remove = []
         for model_id, model in self.models.items():
             if not os.path.exists(model.filepath):
@@ -532,7 +532,7 @@ class ModelManager:
             import hashlib
             model_id = hashlib.md5(hf_repo.encode()).hexdigest()[:16]
             
-            # Controlla se già esiste
+            # Check if already exists
             if model_id in self.models:
                 logger.info(f"Model {hf_repo} already exists")
                 return self.models[model_id]
@@ -678,7 +678,7 @@ def parse_huggingface_repo(hf_repo: str) -> Dict:
 
 
 class ModelSyncClient:
-    """Client per sincronizzazione modelli con server centrale."""
+    """Client for model synchronization with central server."""
     
     def __init__(self, server_url: str, node_token: str = None):
         self.server_url = server_url.rstrip('/')
@@ -686,15 +686,15 @@ class ModelSyncClient:
     
     def sync_models(self, node_id: str, hardware_info: Dict, models: List[Dict]) -> Dict:
         """
-        Sincronizza modelli con il server.
+        Synchronize models with the server.
         
-        Invia:
-        - Info hardware del nodo
-        - Lista modelli disponibili
+        Sends:
+        - Node hardware info
+        - Available models list
         
-        Riceve:
-        - Conferma registrazione
-        - Eventuali modelli richiesti dalla rete
+        Receives:
+        - Registration confirmation
+        - Possibly models requested by the network
         """
         try:
             payload = {

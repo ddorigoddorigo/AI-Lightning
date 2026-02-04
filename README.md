@@ -2,37 +2,37 @@
 
 ## Decentralized LLMs with Lightning payments
 
-Sistema decentralizzato per offrire potenza di calcolo LLM a pagamento via Lightning Network.
+Decentralized system for offering LLM computing power paid via Lightning Network.
 
-## Architettura
-- **Server Principale**: Coordina utenti, sessioni e nodi
-- **Nodi Host**: Forniscono potenza di calcolo con llama.cpp
-- **Client**: Interfaccia utente (web o desktop)
+## Architecture
+- **Main Server**: Coordinates users, sessions and nodes
+- **Host Nodes**: Provide computing power with llama.cpp
+- **Client**: User interface (web or desktop)
 
 ## Setup
 
 ### Server
-1. Copia `server/.env.example` in `.env` e modifica la configurazione
-2. Installa dipendenze: `pip install -r server/requirements.txt`
+1. Copy `server/.env.example` to `.env` and edit the configuration
+2. Install dependencies: `pip install -r server/requirements.txt`
 3. Setup database: `python scripts/setup_server.py`
-4. Avvia server: `gunicorn --workers 4 --bind 0.0.0.0:5000 server/app:app`
+4. Start server: `gunicorn --workers 4 --bind 0.0.0.0:5000 server/app:app`
 
-### Nodo Host
-1. Copia `node/config.ini.example` in `config.ini` e modifica
-2. Installa dipendenze: `pip install -r node/requirements.txt`
-3. Setup nodo: `python scripts/setup_node.py`
-4. Avvia nodo: `python node/node_server.py`
+### Host Node
+1. Copy `node/config.ini.example` to `config.ini` and edit
+2. Install dependencies: `pip install -r node/requirements.txt`
+3. Setup node: `python scripts/setup_node.py`
+4. Start node: `python node/node_server.py`
 
-### Client Web
-Basta aprire un browser alla URL del server.
+### Web Client
+Just open a browser to the server URL.
 
-### Client Desktop
-1. Copia `client/config.ini.example` in `config.ini`
-2. Installa dipendenze: `pip install -r client/requirements.txt`
-3. Avvia client: `python client/app.py`
+### Desktop Client
+1. Copy `client/config.ini.example` to `config.ini`
+2. Install dependencies: `pip install -r client/requirements.txt`
+3. Start client: `python client/app.py`
 
 ## Deployment
-Vedi `docs/deployment.md` per istruzioni dettagliate.
+See `docs/deployment.md` for detailed instructions.
 
-## Licenza
+## License
 MIT

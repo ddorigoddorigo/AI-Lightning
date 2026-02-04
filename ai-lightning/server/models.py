@@ -1,7 +1,7 @@
 """
-Modelli database per il server principale.
+Database models for the main server.
 
-Usa SQLAlchemy per l'interazione con PostgreSQL.
+Uses SQLAlchemy for PostgreSQL interaction.
 """
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,30 +10,30 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 
 class User(db.Model):
-    """Utente del sistema."""
+    """System user."""
     __tablename__ = 'users'
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=True)  # Email opzionale
-    password_hash = db.Column(db.String(256), nullable=False)  # Aumentato per hash scrypt
-    balance = db.Column(db.Integer, default=0)  # Saldo in satoshis
+    email = db.Column(db.String(120), unique=True, nullable=True)  # Optional email
+    password_hash = db.Column(db.String(256), nullable=False)  # Increased for scrypt hash
+    balance = db.Column(db.Integer, default=0)  # Balance in satoshis
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
 
     def set_password(self, password):
-        """Imposta la password hashata."""
+        """Set the hashed password."""
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
-        """Verifica la password."""
+        """Verify the password."""
         return check_password_hash(self.password_hash, password)
 
     def __repr__(self):
         return f'<User {self.username}>'
 
 class Session(db.Model):
-    """Sessione di chat attiva."""
+    """Active chat session."""
     __tablename__ = 'sessions'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -51,20 +51,20 @@ class Session(db.Model):
 
     @property
     def expired(self):
-        """True se la sessione è scaduta."""
+        """True if session is expired."""
         return datetime.utcnow() > self.expires_at
 
     def __repr__(self):
         return f'<Session {self.id} for {self.user.username}>'
 
 class Node(db.Model):
-    """Nodo host registrato."""
+    """Registered host node."""
     __tablename__ = 'nodes'
 
     id = db.Column(db.String(64), primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     address = db.Column(db.String(45), nullable=False)
-    models = db.Column(db.JSON, nullable=False)  # Dict di modelli offerti
+    models = db.Column(db.JSON, nullable=False)  # Dict of offered models
     payment_address = db.Column(db.String(256), nullable=True)  # Lightning address (LNURL, BOLT12, or node pubkey)
     online = db.Column(db.Boolean, default=True)
     last_ping = db.Column(db.DateTime, nullable=False)
@@ -78,24 +78,24 @@ class Node(db.Model):
 
 
 class NodeStats(db.Model):
-    """Statistiche del nodo host."""
+    """Host node statistics."""
     __tablename__ = 'node_stats'
 
     id = db.Column(db.Integer, primary_key=True)
     node_id = db.Column(db.String(64), db.ForeignKey('nodes.id'), nullable=False, unique=True)
-    owner_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # Utente proprietario
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # Owner user
     
-    # Contatori sessioni
+    # Session counters
     total_sessions = db.Column(db.Integer, default=0)
     completed_sessions = db.Column(db.Integer, default=0)
     failed_sessions = db.Column(db.Integer, default=0)
     
-    # Contatori utilizzo
-    total_requests = db.Column(db.Integer, default=0)  # Numero richieste inferenza
+    # Usage counters
+    total_requests = db.Column(db.Integer, default=0)  # Number of inference requests
     total_tokens_generated = db.Column(db.Integer, default=0)
-    total_minutes_active = db.Column(db.Float, default=0.0)  # Minuti totali di attività
+    total_minutes_active = db.Column(db.Float, default=0.0)  # Total minutes of activity
     
-    # Guadagni
+    # Earnings
     total_earned_sats = db.Column(db.Integer, default=0)
     
     # Performance
@@ -114,7 +114,7 @@ class NodeStats(db.Model):
     owner = db.relationship('User', backref=db.backref('owned_node_stats', lazy='dynamic'))
 
     def to_dict(self):
-        """Converti in dizionario per API."""
+        """Convert to dictionary for API."""
         return {
             'node_id': self.node_id,
             'owner_user_id': self.owner_user_id,
@@ -135,7 +135,7 @@ class NodeStats(db.Model):
 
 
 class Transaction(db.Model):
-    """Transazione finanziaria."""
+    """Financial transaction."""
     __tablename__ = 'transactions'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -168,7 +168,7 @@ class Transaction(db.Model):
 
 
 class DepositInvoice(db.Model):
-    """Invoice per deposito sul wallet."""
+    """Invoice for wallet deposit."""
     __tablename__ = 'deposit_invoices'
     
     id = db.Column(db.Integer, primary_key=True)

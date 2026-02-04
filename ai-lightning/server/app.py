@@ -1,7 +1,7 @@
 """
-Applicazione Flask principale.
+Main Flask Application.
 
-Gestisce autenticazione, API, WebSocket e logica business.
+Handles authentication, API, WebSocket and business logic.
 """
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, current_app
@@ -22,14 +22,14 @@ import click
 import logging
 import json
 
-# Configurazione logging
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configura percorsi per templates e static files
+# Configure paths for templates and static files
 import os
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 template_dir = os.path.join(base_dir, 'web-client')
@@ -93,14 +93,14 @@ def validate_model_list(models):
 
 @app.route('/')
 def index():
-    """Pagina principale (web client)."""
+    """Main page (web client)."""
     return render_template('index.html')
 
 # ============================================
 # Auto-Update API
 # ============================================
 
-# Versione corrente del node-client
+# Current node-client version
 NODE_CLIENT_VERSION = "1.0.0"
 NODE_CLIENT_CHANGELOG = """
 ## v1.0.0 (2026-02-04)
@@ -130,16 +130,16 @@ def get_version():
 
 # Auth routes
 @app.route('/api/register', methods=['POST'])
-@rate_limit(max_requests=5, window_seconds=60)  # 5 registrazioni/minuto per IP
+@rate_limit(max_requests=5, window_seconds=60)  # 5 registrations/minute per IP
 @validate_json('username', 'password')
 def register():
-    """Registrazione utente."""
+    """User registration."""
     data = request.get_json()
     
-    # Validazione input
+    # Input validation
     username = data['username'].strip()
     password = data['password']
-    email = data.get('email', '').strip() or None  # Email opzionale
+    email = data.get('email', '').strip() or None  # Optional email
     
     if len(username) < 3 or len(username) > 80:
         return jsonify({'error': 'Username must be 3-80 characters'}), 400
@@ -153,7 +153,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username already taken'}), 400
     
-    # Verifica email se fornita
+    # Verify email if provided
     if email and User.query.filter_by(email=email).first():
         return jsonify({'error': 'Email already registered'}), 400
 
@@ -165,10 +165,10 @@ def register():
     return jsonify({'message': 'Registered successfully'}), 201
 
 @app.route('/api/login', methods=['POST'])
-@rate_limit(max_requests=10, window_seconds=60)  # 10 login/minuto per IP
+@rate_limit(max_requests=10, window_seconds=60)  # 10 logins/minute per IP
 @validate_json('username', 'password')
 def login():
-    """Login utente."""
+    """User login."""
     data = request.get_json()
     user = User.query.filter_by(username=data['username'].strip()).first()
     if not user or not user.check_password(data['password']):
@@ -178,7 +178,7 @@ def login():
     logger.info(f"User {user.username} logged in, token created for id={user.id}")
     return jsonify({
         'token': access_token,
-        'access_token': access_token,  # Per compatibilità
+        'access_token': access_token,  # For compatibility
         'id': user.id,
         'username': user.username,
         'email': user.email,
@@ -190,11 +190,11 @@ def login():
 @app.route('/api/me', methods=['GET'])
 @jwt_required()
 def get_user_profile():
-    """Restituisce informazioni sull'utente corrente incluso il balance."""
+    """Returns information about the current user including balance."""
     user_id = get_jwt_identity()
     logger.info(f"/api/me called with identity: {user_id} (type: {type(user_id).__name__})")
     
-    # Converti a int se necessario
+    # Convert to int if necessary
     try:
         user_id_int = int(user_id)
     except (ValueError, TypeError):
@@ -209,7 +209,7 @@ def get_user_profile():
     
     logger.info(f"Profile loaded for user: {user.username}")
     
-    # Conta sessioni attive
+    # Count active sessions
     active_sessions = Session.query.filter_by(
         user_id=user_id_int, 
         active=True
@@ -230,8 +230,8 @@ def get_user_profile():
 @jwt_required()
 def add_test_balance():
     """
-    Aggiunge balance di test (solo per development/testnet).
-    In produzione questo endpoint dovrebbe essere disabilitato o protetto.
+    Add test balance (only for development/testnet).
+    In production this endpoint should be disabled or protected.
     """
     try:
         user_id = get_jwt_identity()
@@ -243,8 +243,8 @@ def add_test_balance():
         data = request.get_json() or {}
         amount = data.get('amount', 10000)  # Default 10000 sats
         
-        # Limite per evitare abusi
-        if amount > 1000000:  # Max 1M sats per richiesta
+        # Limit to prevent abuse
+        if amount > 1000000:  # Max 1M sats per request
             amount = 1000000
         
         user.balance += amount
@@ -266,12 +266,12 @@ def add_test_balance():
 # Wallet API
 # ============================================
 
-PLATFORM_COMMISSION_RATE = 0.10  # 10% commissione
+PLATFORM_COMMISSION_RATE = 0.10  # 10% commission
 
 @app.route('/api/wallet/balance', methods=['GET'])
 @jwt_required()
 def get_wallet_balance():
-    """Restituisce il saldo del wallet dell'utente."""
+    """Returns user wallet balance."""
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
     
@@ -281,7 +281,7 @@ def get_wallet_balance():
     return jsonify({
         'balance_sats': user.balance,
         'balance_btc': user.balance / 100_000_000,
-        'balance_usd': user.balance * 0.0004  # Approssimativo, da aggiornare con rate reale
+        'balance_usd': user.balance * 0.0004  # Approximate, update with real rate
     })
 
 
@@ -289,7 +289,7 @@ def get_wallet_balance():
 @jwt_required()
 @rate_limit(max_requests=10, window_seconds=60)
 def create_deposit_invoice():
-    """Crea una invoice per depositare fondi nel wallet."""
+    """Create an invoice to deposit funds into wallet."""
     try:
         user_id = get_jwt_identity()
         user = User.query.get(int(user_id))
@@ -300,19 +300,19 @@ def create_deposit_invoice():
         data = request.get_json() or {}
         amount = data.get('amount', 10000)  # Default 10000 sats
         
-        # Validazione
+        # Validation
         if amount < 1000:
             return jsonify({'error': 'Minimum deposit is 1000 sats'}), 400
         if amount > 10_000_000:
             return jsonify({'error': 'Maximum deposit is 10,000,000 sats'}), 400
         
-        # Crea invoice Lightning
+        # Create Lightning invoice
         invoice = get_lightning_manager().create_invoice(
             amount,
             f"Deposit to LightPhon wallet for {user.username}"
         )
         
-        # Salva nel database
+        # Save to database
         from models import DepositInvoice
         deposit = DepositInvoice(
             user_id=user.id,
@@ -342,7 +342,7 @@ def create_deposit_invoice():
 @app.route('/api/wallet/deposit/check/<payment_hash>', methods=['GET'])
 @jwt_required()
 def check_deposit_status(payment_hash):
-    """Verifica lo stato di un deposito."""
+    """Check deposit status."""
     try:
         user_id = get_jwt_identity()
         
@@ -355,22 +355,22 @@ def check_deposit_status(payment_hash):
         if not deposit:
             return jsonify({'error': 'Deposit not found'}), 404
         
-        # Se già pagato
+        # If already paid
         if deposit.status == 'paid':
             return jsonify({'status': 'paid', 'amount': deposit.amount})
         
-        # Controlla pagamento
+        # Check payment
         if get_lightning_manager().check_payment(deposit.payment_hash):
-            # Aggiorna deposito
+            # Update deposit
             deposit.status = 'paid'
             deposit.paid_at = datetime.utcnow()
             
-            # Aggiungi al saldo utente
+            # Add to user balance
             user = User.query.get(int(user_id))
             old_balance = user.balance
             user.balance += deposit.amount
             
-            # Registra transazione
+            # Record transaction
             tx = Transaction(
                 type='deposit',
                 user_id=user.id,
@@ -392,7 +392,7 @@ def check_deposit_status(payment_hash):
                 'new_balance': user.balance
             })
         
-        # Controlla se scaduto
+        # Check if expired
         if datetime.utcnow() > deposit.expires_at:
             deposit.status = 'expired'
             db.session.commit()
@@ -408,14 +408,14 @@ def check_deposit_status(payment_hash):
 @app.route('/api/wallet/transactions', methods=['GET'])
 @jwt_required()
 def get_wallet_transactions():
-    """Restituisce lo storico transazioni dell'utente."""
+    """Returns user transaction history."""
     try:
         user_id = get_jwt_identity()
         
-        # Paginazione
+        # Pagination
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
-        per_page = min(per_page, 100)  # Max 100 per pagina
+        per_page = min(per_page, 100)  # Max 100 per page
         
         from models import Transaction
         transactions = Transaction.query.filter_by(user_id=int(user_id))\
@@ -437,7 +437,7 @@ def get_wallet_transactions():
 @app.route('/api/wallet/pay_session', methods=['POST'])
 @jwt_required()
 def pay_session_from_wallet():
-    """Paga una sessione dal saldo wallet invece che con invoice esterna."""
+    """Pay a session from wallet balance instead of external invoice."""
     try:
         user_id = get_jwt_identity()
         user = User.query.get(int(user_id))
@@ -455,15 +455,15 @@ def pay_session_from_wallet():
         if session.node_id != 'pending':
             return jsonify({'error': 'Session already paid'}), 400
         
-        # Usa l'importo salvato nella sessione
+        # Use amount saved in session
         original_amount = session.amount
         if not original_amount:
-            # Fallback al lightning manager (per sessioni vecchie)
+            # Fallback to lightning manager (for old sessions)
             original_amount = get_lightning_manager().get_invoice_amount(session.payment_hash)
         if not original_amount:
             return jsonify({'error': 'Could not determine session cost'}), 400
         
-        # Verifica saldo
+        # Verify balance
         if user.balance < original_amount:
             return jsonify({
                 'error': 'Insufficient balance',
@@ -471,14 +471,14 @@ def pay_session_from_wallet():
                 'available': user.balance
             }), 400
         
-        # Calcola commissione (10%)
+        # Calculate commission (10%)
         commission = int(original_amount * PLATFORM_COMMISSION_RATE)
         node_payment = original_amount - commission
         
-        # Deduce dal saldo
+        # Deduct from balance
         user.balance -= original_amount
         
-        # Registra transazione
+        # Record transaction
         from models import Transaction, PlatformStats
         tx = Transaction(
             type='session_payment',
@@ -493,7 +493,7 @@ def pay_session_from_wallet():
         )
         db.session.add(tx)
         
-        # Aggiorna statistiche piattaforma
+        # Update platform stats
         stats = PlatformStats.query.get(1)
         if not stats:
             stats = PlatformStats(id=1)
@@ -521,7 +521,7 @@ def pay_session_from_wallet():
 @app.route('/api/session/<int:session_id>/check_payment', methods=['GET'])
 @jwt_required()
 def check_session_payment(session_id):
-    """Verifica se il pagamento Lightning per una sessione è stato ricevuto."""
+    """Check if Lightning payment for a session has been received."""
     try:
         user_id = get_jwt_identity()
         
@@ -529,17 +529,17 @@ def check_session_payment(session_id):
         if not session or session.user_id != int(user_id):
             return jsonify({'error': 'Session not found'}), 404
         
-        # Se già assegnato a un nodo, è già pagato
+        # If already assigned to a node, it's already paid
         if session.node_id and session.node_id != 'pending':
             return jsonify({'paid': True})
         
-        # In TEST_MODE, non auto-confirm nel polling - l'utente deve usare "Pay with Wallet"
-        # o pagare davvero con Lightning. Questo permette di testare il flusso wallet.
+        # In TEST_MODE, don't auto-confirm in polling - user must use "Pay with Wallet"
+        # or actually pay with Lightning. This allows testing the wallet flow.
         if Config.DEBUG:
-            # In debug/test mode, ritorna sempre False per forzare uso del wallet
+            # In debug/test mode, always return False to force wallet usage
             return jsonify({'paid': False})
         
-        # Verifica pagamento Lightning (solo in produzione)
+        # Verify Lightning payment (production only)
         payment_verified = get_lightning_manager().check_payment(session.payment_hash)
         
         if payment_verified:
@@ -558,7 +558,7 @@ def check_session_payment(session_id):
 # ============================================
 
 def admin_required():
-    """Decorator per verificare che l'utente sia admin."""
+    """Decorator to verify user is admin."""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -574,7 +574,7 @@ def admin_required():
 @app.route('/api/admin/stats', methods=['GET'])
 @jwt_required()
 def get_admin_stats():
-    """Statistiche piattaforma (solo admin)."""
+    """Platform statistics (admin only)."""
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
     
@@ -590,7 +590,7 @@ def get_admin_stats():
             db.session.add(stats)
             db.session.commit()
         
-        # Calcola statistiche real-time
+        # Calculate real-time statistics
         total_users = User.query.count()
         total_nodes = Node.query.count()
         online_nodes = len(connected_nodes)
@@ -625,7 +625,7 @@ def get_admin_stats():
 @app.route('/api/admin/users', methods=['GET'])
 @jwt_required()
 def get_admin_users():
-    """Lista utenti (solo admin)."""
+    """User list (admin only)."""
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
     
@@ -660,7 +660,7 @@ def get_admin_users():
 @app.route('/api/admin/transactions', methods=['GET'])
 @jwt_required()
 def get_admin_transactions():
-    """Tutte le transazioni (solo admin)."""
+    """All transactions (admin only)."""
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
     
@@ -672,7 +672,7 @@ def get_admin_transactions():
         
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
-        tx_type = request.args.get('type')  # Filtro per tipo
+        tx_type = request.args.get('type')  # Filter by type
         
         query = Transaction.query
         if tx_type:
@@ -698,7 +698,7 @@ def get_admin_transactions():
 @app.route('/api/admin/commissions', methods=['GET'])
 @jwt_required()
 def get_admin_commissions():
-    """Report commissioni (solo admin)."""
+    """Commission report (admin only)."""
     user_id = get_jwt_identity()
     user = User.query.get(int(user_id))
     
@@ -708,7 +708,7 @@ def get_admin_commissions():
     try:
         from models import Transaction
         
-        # Commissioni per giorno (ultimi 30 giorni)
+        # Commissions per day (last 30 days)
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
         
         commissions = db.session.query(
@@ -738,12 +738,12 @@ def get_admin_commissions():
 
 def get_busy_node_ids():
     """
-    Restituisce l'insieme degli ID dei nodi attualmente in uso (con sessioni attive).
-    Un nodo è considerato "in uso" se ha almeno una sessione attiva non scaduta.
+    Returns the set of node IDs that are currently in use (with active sessions).
+    A node is considered "in use" if it has at least one active non-expired session.
     """
     busy_nodes = set()
     
-    # Query per sessioni attive
+    # Query for active sessions
     active_sessions = Session.query.filter(
         Session.active == True,
         Session.node_id != None,
@@ -759,12 +759,12 @@ def get_busy_node_ids():
 
 def get_busy_nodes_info():
     """
-    Restituisce un dizionario con info sui nodi occupati, incluso il tempo rimanente.
+    Returns a dictionary with info about busy nodes, including remaining time.
     Returns: {node_id: {'expires_at': datetime, 'seconds_remaining': int, 'model': str}}
     """
     busy_info = {}
     
-    # Query per sessioni attive
+    # Query for active sessions
     active_sessions = Session.query.filter(
         Session.active == True,
         Session.node_id != None,
@@ -787,19 +787,19 @@ def get_busy_nodes_info():
 @app.route('/api/models/available', methods=['GET'])
 def get_available_models():
     """
-    Restituisce lista aggregata di tutti i modelli disponibili dai nodi online.
-    Include sia modelli disponibili che quelli su nodi occupati (con timer).
-    Non richiede autenticazione.
+    Returns aggregated list of all available models from online nodes.
+    Includes both available models and those on busy nodes (with timer).
+    Does not require authentication.
     """
-    available_models = {}  # model_id -> model_info per modelli disponibili
-    busy_models = {}  # model_id -> model_info per modelli su nodi occupati
+    available_models = {}  # model_id -> model_info for available models
+    busy_models = {}  # model_id -> model_info for models on busy nodes
     
-    # Ottieni info sui nodi occupati (con tempo rimanente)
+    # Get info about busy nodes (with remaining time)
     busy_nodes_info = get_busy_nodes_info()
     busy_node_ids = set(busy_nodes_info.keys())
     available_nodes_count = 0
     
-    # Raccogli modelli da TUTTI i nodi WebSocket connessi
+    # Collect models from ALL connected WebSocket nodes
     for node_id, info in connected_nodes.items():
         is_busy = node_id in busy_node_ids
         
@@ -810,18 +810,21 @@ def get_available_models():
         hardware = info.get('hardware', {})
         node_name = info.get('name', node_id)
         
-        # Scegli quale dizionario usare
+        # Choose which dictionary to use
         target_map = busy_models if is_busy else available_models
         
         for model in node_models:
             if isinstance(model, dict):
-                # Nuovo formato con info complete
+                # New format with complete info
                 model_id = model.get('id', model.get('name', 'unknown'))
+                
+                # For display name, use hf_repo or filename to show full GGUF name
+                display_name = model.get('hf_repo') or model.get('filename') or model.get('name', model_id)
                 
                 if model_id not in target_map:
                     target_map[model_id] = {
                         'id': model_id,
-                        'name': model.get('name', model_id),
+                        'name': display_name,
                         'parameters': model.get('parameters', 'Unknown'),
                         'quantization': model.get('quantization', 'Unknown'),
                         'context_length': model.get('context_length', 100000),
@@ -830,7 +833,9 @@ def get_available_models():
                         'min_vram_mb': model.get('min_vram_mb', 0),
                         'available': not is_busy,
                         'nodes_count': 0,
-                        'nodes': []
+                        'nodes': [],
+                        'hf_repo': model.get('hf_repo'),
+                        'is_huggingface': model.get('is_huggingface', False)
                     }
                 
                 target_map[model_id]['nodes_count'] += 1
@@ -840,18 +845,18 @@ def get_available_models():
                     'vram_available': hardware.get('total_vram_mb', 0)
                 }
                 
-                # Aggiungi info timer se occupato
+                # Add timer info if busy
                 if is_busy and node_id in busy_nodes_info:
                     node_info['busy'] = True
                     node_info['seconds_remaining'] = busy_nodes_info[node_id]['seconds_remaining']
                     node_info['expires_at'] = busy_nodes_info[node_id]['expires_at']
-                    # Aggiungi anche al modello stesso per facile accesso
+                    # Also add to model itself for easy access
                     target_map[model_id]['seconds_remaining'] = busy_nodes_info[node_id]['seconds_remaining']
                     target_map[model_id]['expires_at'] = busy_nodes_info[node_id]['expires_at']
                 
                 target_map[model_id]['nodes'].append(node_info)
             else:
-                # Vecchio formato - solo nome modello
+                # Old format - model name only
                 model_name = str(model)
                 if model_name not in target_map:
                     target_map[model_name] = {
@@ -877,7 +882,7 @@ def get_available_models():
                 
                 target_map[model_name]['nodes'].append(node_info)
     
-    # Converti in liste e ordina
+    # Convert to lists and sort
     available_list = list(available_models.values())
     available_list.sort(key=lambda x: (-x['nodes_count'], x['name']))
     
@@ -885,8 +890,8 @@ def get_available_models():
     busy_list.sort(key=lambda x: (x.get('seconds_remaining', 0), x['name']))
     
     return jsonify({
-        'models': available_list,  # Modelli disponibili (retrocompatibilità)
-        'busy_models': busy_list,  # Modelli su nodi occupati con timer
+        'models': available_list,  # Available models (backwards compatibility)
+        'busy_models': busy_list,  # Models on busy nodes with timer
         'total_nodes_online': len(connected_nodes),
         'available_nodes': available_nodes_count,
         'busy_nodes': len(busy_node_ids),
@@ -897,9 +902,9 @@ def get_available_models():
 @app.route('/api/nodes/online', methods=['GET'])
 def get_online_nodes():
     """
-    Restituisce lista dei nodi online con le loro info hardware.
-    Indica anche se il nodo è attualmente in uso.
-    Non richiede autenticazione.
+    Returns list of online nodes with their hardware info.
+    Also indicates if the node is currently in use.
+    Does not require authentication.
     """
     nodes = []
     busy_nodes_info = get_busy_nodes_info()
@@ -910,22 +915,22 @@ def get_online_nodes():
         models = info.get('models', [])
         is_busy = node_id in busy_node_ids
         
-        # Estrai info RAM
+        # Extract RAM info
         ram_info = hardware.get('ram', {})
         ram_gb = ram_info.get('total_gb', 0)
         ram_speed = ram_info.get('speed_mhz', 0)
         ram_type = ram_info.get('type', '')
         
-        # Estrai info disco
+        # Extract disk info
         disk_info = hardware.get('disk', {})
         
         node_data = {
             'node_id': node_id,
             'name': info.get('name', node_id),
-            'models': models,  # Lista completa modelli
+            'models': models,  # Full model list
             'models_count': len(models),
             'status': 'busy' if is_busy else 'available',
-            'price_per_minute': info.get('price_per_minute', 100),  # Prezzo in satoshi/minuto
+            'price_per_minute': info.get('price_per_minute', 100),  # Price in satoshi/minute
             'hardware': {
                 'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
                 'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
@@ -968,11 +973,11 @@ def get_online_nodes():
 # Session routes
 @app.route('/api/new_session', methods=['POST'])
 @jwt_required()
-@rate_limit(max_requests=20, window_seconds=60)  # 20 sessioni/minuto per utente
+@rate_limit(max_requests=20, window_seconds=60)  # 20 sessions/minute per user
 @validate_json('model', 'minutes')
 @validate_model_param
 def new_session():
-    """Crea una nuova sessione."""
+    """Create a new session."""
     try:
         user_id = get_jwt_identity()
         
@@ -984,29 +989,29 @@ def new_session():
             
         data = request.get_json()
         model_requested = data['model']
-        requested_node_id = data.get('node_id')  # Nodo specifico richiesto
-        hf_repo = data.get('hf_repo')  # HuggingFace repo per modelli custom
+        requested_node_id = data.get('node_id')  # Specific node requested
+        hf_repo = data.get('hf_repo')  # HuggingFace repo for custom models
         
         logger.info(f"New session request: user={user_id}, model={model_requested}, node_id={requested_node_id}, hf_repo={hf_repo}")
 
-        # Se è specificato un node_id, verifica che sia online
+        # If node_id is specified, verify it's online
         node_with_model = None
         model_price = None
         
         if requested_node_id:
-            # Nodo specifico richiesto
+            # Specific node requested
             if requested_node_id in connected_nodes:
                 info = connected_nodes[requested_node_id]
                 
-                # Ottieni il prezzo del nodo
+                # Get node price
                 node_price = info.get('price_per_minute', 100)
                 
-                # Se è un modello HuggingFace custom, accetta sempre (verrà scaricato)
+                # If it's a custom HuggingFace model, always accept (will be downloaded)
                 if hf_repo:
                     node_with_model = requested_node_id
-                    model_price = node_price  # Usa il prezzo del nodo
+                    model_price = node_price  # Use node price
                 else:
-                    # Verifica che il nodo abbia il modello
+                    # Verify node has the model
                     node_models = info.get('models', [])
                     for model in node_models:
                         model_id = None
@@ -1018,7 +1023,7 @@ def new_session():
                         
                         if model_id == model_requested:
                             node_with_model = requested_node_id
-                            model_price = node_price  # Usa il prezzo del nodo
+                            model_price = node_price  # Use node price
                             break
                     
                     if not node_with_model:
@@ -1028,10 +1033,10 @@ def new_session():
                 logger.warning(f"Requested node {requested_node_id} is not online")
                 return jsonify({'error': 'Selected node is not online'}), 404
         else:
-            # Nessun nodo specifico: cerca automaticamente
+            # No specific node: search automatically
             for node_id, info in connected_nodes.items():
                 node_models = info.get('models', [])
-                node_price = info.get('price_per_minute', 100)  # Prezzo del nodo
+                node_price = info.get('price_per_minute', 100)  # Node price
                 
                 for model in node_models:
                     model_id = None
@@ -1043,7 +1048,7 @@ def new_session():
                     
                     if model_id == model_requested:
                         node_with_model = node_id
-                        model_price = node_price  # Usa il prezzo del nodo
+                        model_price = node_price  # Use node price
                         break
                 
                 if node_with_model:
@@ -1053,7 +1058,7 @@ def new_session():
             logger.warning(f"No node with model {model_requested}")
             return jsonify({'error': f'No node available with model: {model_requested}'}), 404
 
-        # Valida minuti
+        # Validate minutes
         try:
             minutes = int(data['minutes'])
         except (ValueError, TypeError):
@@ -1070,7 +1075,7 @@ def new_session():
         except (ValueError, TypeError):
             context_length = 4096
 
-        # Crea fattura (usa prezzo dal nodo se disponibile)
+        # Create invoice (use node price if available)
         amount = get_model_price(model_requested, model_price) * minutes
         
         try:
@@ -1082,22 +1087,22 @@ def new_session():
             logger.error(f"Lightning invoice creation failed: {e}")
             return jsonify({'error': 'Lightning Network unavailable. Please try again later.'}), 503
 
-        # Crea sessione nel DB (pending payment)
-        # Salva il nodo target per l'assegnazione dopo il pagamento
+        # Create session in DB (pending payment)
+        # Save target node for assignment after payment
         session = Session(
             user_id=user_id,
             node_id='pending',
             model=model_requested,
             payment_hash=invoice['r_hash'],
-            amount=amount,  # Salva l'importo per il pagamento wallet
+            amount=amount,  # Save amount for wallet payment
             expires_at=datetime.utcnow() + timedelta(minutes=minutes),
             context_length=context_length
         )
         
-        # Memorizza il nodo target nel pending_sessions per l'assegnazione
-        # dopo il pagamento
+        # Store target node in pending_sessions for assignment
+        # after payment
         pending_sessions[invoice['r_hash']] = {
-            'session_id': None,  # Sarà aggiornato dopo commit
+            'session_id': None,  # Will be updated after commit
             'target_node_id': node_with_model,
             'hf_repo': hf_repo
         }
@@ -1105,7 +1110,7 @@ def new_session():
         db.session.add(session)
         db.session.commit()
         
-        # Aggiorna pending_sessions con session_id
+        # Update pending_sessions with session_id
         pending_sessions[invoice['r_hash']]['session_id'] = session.id
         
         logger.info(f"Session {session.id} created, invoice amount: {amount} sats, target_node: {node_with_model}")
@@ -1125,7 +1130,7 @@ def new_session():
 @app.route('/api/register_node', methods=['POST'])
 @jwt_required()
 def register_node():
-    """Registrazione di un nodo host."""
+    """Host node registration."""
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
 
@@ -1136,14 +1141,14 @@ def register_node():
     if not validate_model_list(data['models']):
         return jsonify({'error': 'Invalid models'}), 400
 
-    # Registra nodo
+    # Register node
     node_id = get_node_manager().register_node(
         user_id,
         request.remote_addr,
         data['models']
     )
 
-    # Salva nel DB
+    # Save to DB
     node = Node(
         id=node_id,
         user_id=user_id,
@@ -1152,7 +1157,7 @@ def register_node():
     )
     db.session.add(node)
 
-    # Addebita fee
+    # Charge fee
     user.balance -= Config.NODE_REGISTRATION_FEE
     db.session.add(Transaction(
         type='withdrawal',
@@ -1170,7 +1175,7 @@ def register_node():
 # WebSocket routes
 @socketio.on('connect')
 def handle_connect(auth=None):
-    """Gestione connessione WebSocket."""
+    """WebSocket connection handling."""
     sid = request.sid
     logger.info(f"Socket connect: sid={sid}, auth={auth}")
     
@@ -1203,7 +1208,7 @@ def handle_connect(auth=None):
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Gestione disconnessione."""
+    """Disconnection handling."""
     sid = request.sid
     if sid in socket_users:
         del socket_users[sid]
@@ -1212,7 +1217,7 @@ def handle_disconnect():
 
 @socketio.on('start_session')
 def start_session(data):
-    """Avvia una sessione dopo pagamento."""
+    """Start a session after payment."""
     logger.info(f"start_session called with data: {data}")
     
     user_id = get_socket_user_id()
@@ -1249,22 +1254,22 @@ def start_session(data):
         emit('error', {'message': 'Session expired'})
         return
 
-    # Controlla se c'è un nodo target specifico in pending_sessions
+    # Check if there's a specific target node in pending_sessions
     target_node_id = None
     hf_repo = None
     if session.payment_hash in pending_sessions:
         pending_info = pending_sessions[session.payment_hash]
         target_node_id = pending_info.get('target_node_id')
         hf_repo = pending_info.get('hf_repo')
-        # Rimuovi da pending_sessions
+        # Remove from pending_sessions
         del pending_sessions[session.payment_hash]
     
-    # Se c'è un target node specifico, usa quello
+    # If there's a specific target node, use it
     ws_node_id = None
     ws_sid = None
     
     if target_node_id and target_node_id in connected_nodes:
-        # Verifica che il nodo target sia ancora disponibile (non occupato)
+        # Verify target node is still available (not busy)
         busy_nodes = get_busy_node_ids()
         if target_node_id not in busy_nodes:
             ws_node_id = target_node_id
@@ -1273,18 +1278,19 @@ def start_session(data):
             emit('error', {'message': 'Selected node is currently busy'})
             return
     else:
-        # Fallback: cerca un nodo WebSocket disponibile (dietro NAT)
+        # Fallback: search for available WebSocket node (behind NAT)
         ws_node_id, ws_sid = get_websocket_node(session.model)
     
     if ws_node_id:
-        # Usa nodo WebSocket
+        # Use WebSocket node
         try:
             session.node_id = ws_node_id
             session.active = True
             db.session.commit()
             
-            # Ottieni context dal modello registrato dal nodo
+            # Get context and hf_repo from model registered by node
             context = 4096  # Default
+            model_hf_repo = None  # HuggingFace repo from registered model
             if ws_node_id in connected_nodes:
                 node_models = connected_nodes[ws_node_id].get('models', [])
                 for m in node_models:
@@ -1292,25 +1298,30 @@ def start_session(data):
                         model_id = m.get('id', m.get('name', ''))
                         if model_id == session.model or m.get('name') == session.model:
                             context = m.get('context_length', m.get('context', 4096))
+                            # Retrieve hf_repo from model if HuggingFace
+                            if m.get('is_huggingface') or m.get('hf_repo'):
+                                model_hf_repo = m.get('hf_repo')
                             break
             
-            # Usa il context_length della sessione (scelto dall'utente) se disponibile
+            # Use session context_length (chosen by user) if available
             if hasattr(session, 'context_length') and session.context_length:
                 context = session.context_length
             
-            # Invia richiesta al nodo
+            # Send request to node
             start_data = {
                 'session_id': session.id,
                 'model': session.model,
-                'model_id': session.model,  # Per il nuovo sistema
+                'model_id': session.model,  # For the new system
                 'model_name': session.model,
                 'context': context
             }
             
-            # Se è un modello HuggingFace custom, aggiungi il repo
-            if hf_repo:
-                start_data['hf_repo'] = hf_repo
-                logger.info(f"Session {session.id} will download HF model: {hf_repo}")
+            # If it's a custom HuggingFace model, add the repo
+            # Priority: hf_repo from request > hf_repo from registered model
+            final_hf_repo = hf_repo or model_hf_repo
+            if final_hf_repo:
+                start_data['hf_repo'] = final_hf_repo
+                logger.info(f"Session {session.id} will use HF model: {final_hf_repo}")
             
             socketio.emit('start_session', start_data, room=f"node_{ws_node_id}")
             
@@ -1326,16 +1337,16 @@ def start_session(data):
             
         except Exception as e:
             current_app.logger.error(f"Failed to start session on WS node: {e}")
-            # Prova con nodo HTTP
+            # Try with HTTP node
 
-    # Fallback: cerca nodo HTTP tradizionale
+    # Fallback: search for traditional HTTP node
     nm = get_node_manager()
     node = nm.get_available_node(session.model)
     if not node:
         emit('error', {'message': 'No available nodes'})
         return
 
-    # Avvia sessione sul nodo HTTP
+    # Start session on HTTP node
     try:
         node_id_str = node[b'id'].decode() if isinstance(node[b'id'], bytes) else node[b'id']
         node_info = nm.start_remote_session(
@@ -1345,15 +1356,15 @@ def start_session(data):
             Config.AVAILABLE_MODELS[session.model]['context']
         )
 
-        # Aggiorna sessione
+        # Update session
         session.node_id = node_id_str
         session.active = True
         db.session.commit()
 
-        # Calcola minuti dalla scadenza
+        # Calculate minutes from expiration
         minutes_purchased = (session.expires_at - session.created_at).total_seconds() / 60
         
-        # Paga il nodo
+        # Pay the node
         amount = int(get_model_price(session.model) * minutes_purchased * Config.NODE_PAYMENT_RATIO)
         nm.pay_node(
             session.node_id,
@@ -1374,7 +1385,7 @@ def start_session(data):
 
 @socketio.on('chat_message')
 def handle_message(data):
-    """Gestione messaggi chat."""
+    """Chat message handling."""
     user_id = get_socket_user_id()
     if not user_id:
         emit('error', {'message': 'Authentication required'})
@@ -1386,9 +1397,9 @@ def handle_message(data):
         emit('error', {'message': 'Invalid session'})
         return
 
-    # Verifica se il nodo è connesso via WebSocket
+    # Check if the node is connected via WebSocket
     if session.node_id in connected_nodes:
-        # Inoltra al nodo WebSocket con streaming abilitato e tutti i parametri LLM
+        # Forward to WebSocket node with streaming enabled and all LLM parameters
         socketio.emit('inference_request', {
             'session_id': session.id,
             'prompt': data['prompt'],
@@ -1423,13 +1434,13 @@ def handle_message(data):
         }, room=f"node_{session.node_id}")
         return
 
-    # Altrimenti usa HTTP (nodo tradizionale)
+    # Otherwise use HTTP (traditional node)
     nm = get_node_manager()
     if not nm.check_node_status(session.node_id):
         emit('error', {'message': 'Node not available'})
         return
 
-    # Inoltra la richiesta al nodo tramite il proxy endpoint
+    # Forward request to node via proxy endpoint
     try:
         node_data = nm.redis.hgetall(f"node:{session.node_id}")
         if not node_data:
@@ -1438,8 +1449,8 @@ def handle_message(data):
         
         node_address = node_data[b'address'].decode()
         
-        # Usa il nuovo endpoint proxy sul nodo (porta 9000)
-        # Questo gestisce internamente la comunicazione con llama.cpp
+        # Use the new proxy endpoint on node (port 9000)
+        # This internally handles communication with llama.cpp
         llama_response = httpx.post(
             f"http://{node_address}:9000/api/completion/{session.id}",
             json={
@@ -1451,7 +1462,7 @@ def handle_message(data):
                 'repeat_penalty': data.get('repeat_penalty', 1.1),
                 'stop': data.get('stop', [])
             },
-            timeout=180  # 3 minuti per generazioni lunghe
+            timeout=180  # 3 minutes for long generations
         )
         
         if llama_response.status_code == 404:
@@ -1486,7 +1497,7 @@ def handle_message(data):
 
 @socketio.on('end_session')
 def end_session(data):
-    """Termina sessione manualmente."""
+    """End session manually."""
     user_id = get_socket_user_id()
     if not user_id:
         emit('error', {'message': 'Authentication required'})
@@ -1498,41 +1509,41 @@ def end_session(data):
     if session and session.user_id == user_id:
         logger.info(f"Ending session {session.id}, node_id={session.node_id}")
         
-        # Ferma la sessione sul nodo
+        # Stop session on node
         if session.node_id and session.node_id != 'pending':
             node_id = session.node_id
             
-            # Debug: mostra i nodi connessi
+            # Debug: show connected nodes
             logger.info(f"Connected nodes: {list(connected_nodes.keys())}")
             
-            # Controlla se è un nodo WebSocket
+            # Check if it's a WebSocket node
             if node_id in connected_nodes:
                 node_info = connected_nodes[node_id]
                 node_sid = node_info.get('sid')
                 
-                # Invia stop_session direttamente al socket del nodo
+                # Send stop_session directly to node socket
                 logger.info(f"Sending stop_session to node {node_id} (sid: {node_sid})")
                 
-                # Usa to= invece di room= per inviare direttamente al sid del nodo
+                # Use to= instead of room= to send directly to node sid
                 socketio.emit('stop_session', {
                     'session_id': str(session.id)
                 }, to=node_sid)
                 
                 logger.info(f"Sent stop_session to WebSocket node {node_id} for session {session.id}")
             else:
-                # Usa HTTP per nodi tradizionali
+                # Use HTTP for traditional nodes
                 logger.info(f"Node {node_id} not in connected_nodes, trying HTTP")
                 get_node_manager().stop_remote_session(node_id, session.id)
         
-        # Salva node_id prima di marcare inattiva
+        # Save node_id before marking inactive
         freed_node_id = session.node_id
         
         session.active = False
         db.session.commit()
         
-        # Aggiorna statistiche nodo (sessione completata)
+        # Update node stats (session completed)
         if freed_node_id and freed_node_id != 'pending' and freed_node_id in connected_nodes:
-            # Calcola minuti attivi (se abbiamo start time)
+            # Calculate active minutes (if we have start time)
             minutes_active = 0
             if session.created_at:
                 delta = datetime.utcnow() - session.created_at
@@ -1547,8 +1558,8 @@ def end_session(data):
         leave_room(str(session.id))
         emit('session_ended', room=str(session.id))
         
-        # Notifica a TUTTI i client che il nodo è ora disponibile
-        # Questo aggiorna immediatamente la lista modelli per tutti
+        # Notify ALL clients that the node is now available
+        # This immediately updates the models list for everyone
         socketio.emit('node_freed', {
             'node_id': freed_node_id,
             'message': 'Node is now available'
@@ -1560,13 +1571,13 @@ def end_session(data):
 @app.route('/admin/nodes')
 @jwt_required()
 def list_nodes():
-    """Lista tutti i nodi (solo admin)."""
+    """List all nodes (admin only)."""
     user_id = get_jwt_identity()
     if not User.query.get(user_id).is_admin:
         return jsonify({'error': 'Unauthorized'}), 403
 
     nodes = get_node_manager().get_all_nodes()
-    # Converti bytes in stringhe per JSON serialization
+    # Convert bytes to strings for JSON serialization
     result = []
     for n in nodes:
         node_dict = {}
@@ -1581,7 +1592,7 @@ def list_nodes():
 # Node heartbeat endpoint
 @app.route('/api/node_heartbeat', methods=['POST'])
 def node_heartbeat():
-    """Riceve heartbeat da un nodo."""
+    """Receive heartbeat from a node."""
     data = request.get_json()
     node_id = data.get('node_id')
     
@@ -1591,7 +1602,7 @@ def node_heartbeat():
     nm = get_node_manager()
     nm.node_heartbeat(node_id)
     
-    # Aggiorna anche il carico se fornito
+    # Also update load if provided
     if 'load' in data:
         nm.redis.hset(f"node:{node_id}", 'load', data['load'])
     
@@ -1604,12 +1615,12 @@ def node_heartbeat():
 
 @app.route('/api/node/stats/<node_id>', methods=['GET'])
 def get_node_stats(node_id):
-    """Ottieni statistiche di un nodo."""
+    """Get statistics for a node."""
     from models import NodeStats
     
     stats = NodeStats.query.filter_by(node_id=node_id).first()
     if not stats:
-        # Crea statistiche vuote se non esistono
+        # Create empty stats if they don't exist
         return jsonify({
             'node_id': node_id,
             'total_sessions': 0,
@@ -1631,7 +1642,7 @@ def get_node_stats(node_id):
 
 @app.route('/api/node/stats/<node_id>/update', methods=['POST'])
 def update_node_stats(node_id):
-    """Aggiorna statistiche di un nodo (chiamato internamente)."""
+    """Update statistics for a node (called internally)."""
     from models import NodeStats
     
     data = request.get_json()
@@ -1641,7 +1652,7 @@ def update_node_stats(node_id):
         stats = NodeStats(node_id=node_id)
         db.session.add(stats)
     
-    # Aggiorna campi se presenti
+    # Update fields if present
     if 'add_session' in data:
         stats.total_sessions += 1
     if 'add_completed' in data:
@@ -1658,7 +1669,7 @@ def update_node_stats(node_id):
         stats.total_earned_sats += data['add_earned']
     if 'update_performance' in data:
         perf = data['update_performance']
-        # Media mobile per performance
+        # Moving average for performance
         if perf.get('tokens_per_second'):
             if stats.avg_tokens_per_second == 0:
                 stats.avg_tokens_per_second = perf['tokens_per_second']
@@ -1677,7 +1688,7 @@ def update_node_stats(node_id):
 
 
 def update_node_stats_internal(node_id, **kwargs):
-    """Helper per aggiornare statistiche internamente."""
+    """Helper to update statistics internally."""
     from models import NodeStats
     
     try:
@@ -1711,10 +1722,10 @@ def update_node_stats_internal(node_id, **kwargs):
 
 
 # ============================================
-# WebSocket handlers per nodi dietro NAT
+# WebSocket handlers for nodes behind NAT
 # ============================================
 
-# Dizionario per mappare node_id -> socket_id e info
+# Dictionary to map node_id -> socket_id and info
 # node_id -> {'sid': socket_id, 'models': [...], 'hardware': {...}, 'name': str}
 connected_nodes = {}  
 pending_requests = {}  # request_id -> {'session_id': ..., 'user_sid': ...}
@@ -1723,32 +1734,32 @@ pending_sessions = {}  # payment_hash -> {'session_id': ..., 'target_node_id': .
 
 @socketio.on('node_register')
 def handle_node_register(data):
-    """Registra un nodo connesso via WebSocket."""
+    """Register a node connected via WebSocket."""
     token = data.get('token', '')
     models = data.get('models', [])
     hardware = data.get('hardware', {})
     node_name = data.get('name', '')
     price_per_minute = data.get('price_per_minute', 100)  # Default 100 sats/min
-    auth_token = data.get('auth_token')  # Token JWT dell'utente
-    user_id = data.get('user_id')  # ID dell'utente proprietario
+    auth_token = data.get('auth_token')  # User's JWT token
+    user_id = data.get('user_id')  # Owner user ID
     
-    # Verifica autenticazione utente se fornita
+    # Verify user authentication if provided
     owner_user_id = None
     if auth_token:
         try:
             from flask_jwt_extended import decode_token
             decoded = decode_token(auth_token)
-            owner_user_id = decoded.get('sub')  # user_id dal token
+            owner_user_id = decoded.get('sub')  # user_id from token
             logger.info(f"Node authenticated as user {owner_user_id}")
         except Exception as e:
             logger.warning(f"Invalid auth_token for node: {e}")
     elif user_id:
         owner_user_id = user_id
     
-    # Genera o valida node_id
+    # Generate or validate node_id
     node_id = None
     if token:
-        # Cerca nodo esistente con questo token
+        # Search existing node with this token
         nm = get_node_manager()
         for nid in nm.redis.smembers(nm.nodes_set_key):
             nid_str = nid.decode() if isinstance(nid, bytes) else nid
@@ -1758,7 +1769,7 @@ def handle_node_register(data):
                 break
     
     if not node_id:
-        # Nuovo nodo
+        # New node
         import uuid
         node_id = f"node-ws-{uuid.uuid4().hex[:8]}"
         token = uuid.uuid4().hex
@@ -1776,21 +1787,21 @@ def handle_node_register(data):
             'last_ping': datetime.utcnow().timestamp(),
             'load': 0
         }
-        # Salva owner se autenticato
+        # Save owner if authenticated
         if owner_user_id:
             node_data_redis['owner_user_id'] = owner_user_id
         
         nm.redis.hset(f"node:{node_id}", mapping=node_data_redis)
         nm.redis.sadd(nm.nodes_set_key, node_id)
     else:
-        # Aggiorna nodo esistente
+        # Update existing node
         nm = get_node_manager()
         update_data = {
             'status': 'online',
             'last_ping': datetime.utcnow().timestamp(),
             'price_per_minute': price_per_minute,
         }
-        # Aggiorna owner se autenticato
+        # Update owner if authenticated
         if owner_user_id:
             update_data['owner_user_id'] = owner_user_id
         if models:
@@ -1801,23 +1812,23 @@ def handle_node_register(data):
             update_data['name'] = node_name
         nm.redis.hset(f"node:{node_id}", mapping=update_data)
     
-    # Registra nella mappa connessioni
+    # Register in connections map
     connected_nodes[node_id] = {
         'sid': request.sid,
         'models': models,
         'hardware': hardware,
         'name': node_name or node_id,
         'price_per_minute': price_per_minute,
-        'owner_user_id': owner_user_id  # ID utente proprietario
+        'owner_user_id': owner_user_id  # Owner user ID
     }
     
     join_room(f"node_{node_id}")
     
-    # Calcola VRAM totale
+    # Calculate total VRAM
     total_vram = hardware.get('total_vram_mb', 0) if hardware else 0
     gpu_count = len(hardware.get('gpus', [])) if hardware else 0
     
-    # Aggiorna statistiche nodo (first_online, last_online) e owner
+    # Update node stats (first_online, last_online) and owner
     from models import NodeStats
     stats = NodeStats.query.filter_by(node_id=node_id).first()
     if not stats:
@@ -1834,19 +1845,19 @@ def handle_node_register(data):
     emit('node_registered', {
         'node_id': node_id,
         'token': token,
-        'owner_user_id': owner_user_id  # Restituisci al client
+        'owner_user_id': owner_user_id  # Return to client
     })
 
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Gestione disconnessione - aggiornata per nodi."""
-    # Rimuovi nodo dalla mappa se era connesso
+    """Disconnect handling - updated for nodes."""
+    # Remove node from map if it was connected
     for node_id, info in list(connected_nodes.items()):
         if info['sid'] == request.sid:
             del connected_nodes[node_id]
             
-            # Marca nodo offline
+            # Mark node offline
             nm = get_node_manager()
             nm.redis.hset(f"node:{node_id}", 'status', 'offline')
             
@@ -1859,30 +1870,30 @@ def handle_disconnect():
 
 @socketio.on('session_started')
 def handle_node_session_started(data):
-    """Nodo conferma che la sessione è partita."""
+    """Node confirms that session has started."""
     session_id = str(data['session_id'])
     node_id = data.get('node_id')
     
     logger.info(f"Node confirms session {session_id} started")
     
-    # Aggiorna statistiche nodo
+    # Update node stats
     if node_id:
         update_node_stats_internal(node_id, add_session=True)
     
-    # Notifica il client utente
+    # Notify the user client
     emit('session_ready', {'session_id': session_id}, room=session_id)
 
 
 @socketio.on('session_error')
 def handle_node_session_error(data):
-    """Nodo riporta errore nell'avvio sessione."""
+    """Node reports error starting session."""
     session_id = str(data['session_id'])
     error = data.get('error', 'Unknown error')
     node_id = data.get('node_id')
     
     logger.error(f"Node error for session {session_id}: {error}")
     
-    # Aggiorna statistiche nodo (sessione fallita)
+    # Update node stats (failed session)
     if node_id:
         update_node_stats_internal(node_id, add_failed=True)
     
@@ -1891,14 +1902,14 @@ def handle_node_session_error(data):
 
 @socketio.on('inference_token')
 def handle_inference_token(data):
-    """Nodo invia singolo token (streaming)."""
+    """Node sends single token (streaming)."""
     session_id = str(data['session_id'])
     token = data.get('token', '')
     is_final = data.get('is_final', False)
     
     logger.info(f"[STREAMING] Token for session {session_id}: '{token[:30] if len(token) > 30 else token}' final={is_final}")
     
-    # Inoltra token al client
+    # Forward token to client
     emit('ai_token', {
         'token': token,
         'is_final': is_final,
@@ -1908,14 +1919,14 @@ def handle_inference_token(data):
 
 @socketio.on('session_status')
 def handle_session_status(data):
-    """Nodo invia aggiornamento stato sessione (download/loading model)."""
+    """Node sends session status update (download/loading model)."""
     session_id = str(data['session_id'])
     status = data.get('status', 'unknown')
     message = data.get('message', '')
     
     logger.info(f"Session {session_id} status: {status} - {message}")
     
-    # Inoltra al client
+    # Forward to client
     emit('model_status', {
         'session_id': session_id,
         'status': status,
@@ -1925,7 +1936,7 @@ def handle_session_status(data):
 
 @socketio.on('inference_complete')
 def handle_inference_complete(data):
-    """Nodo segnala completamento streaming con risposta pulita."""
+    """Node signals streaming completion with clean response."""
     session_id = str(data['session_id'])
     content = data.get('content', '')
     tokens_generated = data.get('tokens_generated', 0)
@@ -1933,7 +1944,7 @@ def handle_inference_complete(data):
     
     logger.info(f"[STREAMING] inference_complete for session {session_id}, tokens: {tokens_generated}, content length: {len(content) if content else 0}")
     
-    # Aggiorna statistiche nodo
+    # Update node stats
     session = Session.query.get(session_id)
     if session and session.node_id:
         tokens_per_second = 0
@@ -1946,7 +1957,7 @@ def handle_inference_complete(data):
             add_tokens=tokens_generated
         )
         
-        # Aggiorna performance se disponibile
+        # Update performance if available
         if tokens_per_second > 0 or response_time_ms > 0:
             from models import NodeStats
             stats = NodeStats.query.filter_by(node_id=session.node_id).first()
@@ -1963,7 +1974,7 @@ def handle_inference_complete(data):
                         stats.avg_response_time_ms = (stats.avg_response_time_ms + response_time_ms) / 2
                 db.session.commit()
     
-    # Invia risposta completa pulita
+    # Send clean complete response
     emit('ai_response', {
         'response': content,
         'session_id': session_id,
@@ -1973,13 +1984,13 @@ def handle_inference_complete(data):
 
 @socketio.on('inference_response')
 def handle_inference_response(data):
-    """Nodo invia risposta inferenza (non-streaming)."""
+    """Node sends inference response (non-streaming)."""
     session_id = str(data['session_id'])
     content = data.get('content', '')
     tokens_generated = data.get('tokens_generated', 0)
     response_time_ms = data.get('response_time_ms', 0)
     
-    # Aggiorna statistiche nodo
+    # Update node stats
     session = Session.query.get(session_id)
     if session and session.node_id:
         tokens_per_second = 0
@@ -1992,7 +2003,7 @@ def handle_inference_response(data):
             add_tokens=tokens_generated
         )
         
-        # Aggiorna performance se disponibile
+        # Update performance if available
         if tokens_per_second > 0 or response_time_ms > 0:
             from models import NodeStats
             stats = NodeStats.query.filter_by(node_id=session.node_id).first()
@@ -2017,7 +2028,7 @@ def handle_inference_response(data):
 
 @socketio.on('inference_error')
 def handle_inference_error(data):
-    """Nodo riporta errore inferenza."""
+    """Node reports inference error."""
     session_id = str(data['session_id'])
     error = data.get('error', 'Unknown error')
     
@@ -2026,13 +2037,13 @@ def handle_inference_error(data):
 
 @socketio.on('node_models_update')
 def handle_node_models_update(data):
-    """Nodo aggiorna lista modelli disponibili."""
+    """Node updates available models list."""
     node_id = data.get('node_id')
     models = data.get('models', [])
     hardware = data.get('hardware')
     
     if not node_id:
-        # Cerca node_id dal socket id
+        # Search node_id from socket id
         for nid, info in connected_nodes.items():
             if info['sid'] == request.sid:
                 node_id = nid
@@ -2042,12 +2053,12 @@ def handle_node_models_update(data):
         emit('error', {'message': 'Node not registered'})
         return
     
-    # Aggiorna modelli nel connected_nodes
+    # Update models in connected_nodes
     connected_nodes[node_id]['models'] = models
     if hardware:
         connected_nodes[node_id]['hardware'] = hardware
     
-    # Aggiorna anche in Redis
+    # Also update in Redis
     nm = get_node_manager()
     update_data = {
         'models': json.dumps(models),
@@ -2064,7 +2075,7 @@ def handle_node_models_update(data):
 
 @socketio.on('node_heartbeat')
 def handle_node_heartbeat(data):
-    """Heartbeat dal nodo per mantenere connessione attiva."""
+    """Heartbeat from node to keep connection active."""
     node_id = data.get('node_id')
     
     if not node_id:
@@ -2081,19 +2092,19 @@ def handle_node_heartbeat(data):
 
 def get_websocket_node(model_query):
     """
-    Trova un nodo WebSocket disponibile per il modello.
-    Esclude i nodi già in uso da altri utenti.
+    Find an available WebSocket node for the model.
+    Excludes nodes already in use by other users.
     
-    model_query può essere:
-    - Nome modello (vecchio formato)
-    - ID modello (nuovo formato)
-    - Nome parziale per matching fuzzy
+    model_query can be:
+    - Model name (old format)
+    - Model ID (new format)
+    - Partial name for fuzzy matching
     """
-    # Ottieni nodi occupati
+    # Get busy nodes
     busy_nodes = get_busy_node_ids()
     
     for node_id, info in connected_nodes.items():
-        # Salta nodi già in uso
+        # Skip nodes already in use
         if node_id in busy_nodes:
             logger.debug(f"Node {node_id} is busy, skipping")
             continue
@@ -2102,7 +2113,7 @@ def get_websocket_node(model_query):
         
         for model in node_models:
             if isinstance(model, dict):
-                # Nuovo formato
+                # New format
                 model_id = model.get('id', '')
                 model_name = model.get('name', '')
                 
@@ -2111,7 +2122,7 @@ def get_websocket_node(model_query):
                     model_query.lower() in model_name.lower()):
                     return node_id, info['sid']
             else:
-                # Vecchio formato - stringa
+                # Old format - string
                 if model_query == model or model_query.lower() in str(model).lower():
                     return node_id, info['sid']
     
@@ -2120,14 +2131,14 @@ def get_websocket_node(model_query):
 
 def get_websocket_node_for_model_id(model_id):
     """
-    Trova un nodo WebSocket per uno specifico model_id.
-    Esclude i nodi già in uso da altri utenti.
+    Find a WebSocket node for a specific model_id.
+    Excludes nodes already in use by other users.
     """
-    # Ottieni nodi occupati
+    # Get busy nodes
     busy_nodes = get_busy_node_ids()
     
     for node_id, info in connected_nodes.items():
-        # Salta nodi già in uso
+        # Skip nodes already in use
         if node_id in busy_nodes:
             logger.debug(f"Node {node_id} is busy, skipping")
             continue
@@ -2143,9 +2154,9 @@ def get_websocket_node_for_model_id(model_id):
 # ============================================
 
 
-# Background job per cleanup sessioni scadute
+# Background job for cleaning up expired sessions
 def cleanup_expired_sessions():
-    """Pulisce le sessioni scadute."""
+    """Clean up expired sessions."""
     with app.app_context():
         expired = Session.query.filter(
             Session.active == True,
@@ -2156,7 +2167,7 @@ def cleanup_expired_sessions():
         for session in expired:
             current_app.logger.info(f"Cleaning up expired session {session.id}")
             
-            # Ferma la sessione sul nodo
+            # Stop session on node
             if session.node_id and session.node_id != 'pending':
                 try:
                     nm.stop_remote_session(session.node_id, session.id)
@@ -2171,7 +2182,7 @@ def cleanup_expired_sessions():
 
 
 def start_cleanup_scheduler():
-    """Avvia lo scheduler per il cleanup periodico."""
+    """Start the scheduler for periodic cleanup."""
     import threading
     
     def run_cleanup():
@@ -2180,7 +2191,7 @@ def start_cleanup_scheduler():
                 cleanup_expired_sessions()
             except Exception as e:
                 print(f"Cleanup error: {e}")
-            # Esegui ogni minuto
+            # Run every minute
             threading.Event().wait(60)
     
     thread = threading.Thread(target=run_cleanup, daemon=True)
@@ -2190,14 +2201,14 @@ def start_cleanup_scheduler():
 # CLI commands
 @app.cli.command('init-db')
 def init_db():
-    """Inizializza il database."""
+    """Initialize the database."""
     db.create_all()
     print('Initialized database.')
 
 
 @app.cli.command('cleanup-sessions')
 def cleanup_sessions_cmd():
-    """Pulisce manualmente le sessioni scadute."""
+    """Manually clean up expired sessions."""
     cleanup_expired_sessions()
     print('Cleanup completed.')
 
@@ -2206,7 +2217,7 @@ def cleanup_sessions_cmd():
 @click.argument('username')
 @click.argument('password')
 def create_admin(username, password):
-    """Crea un utente admin."""
+    """Create an admin user."""
     user = User(username=username, is_admin=True)
     user.set_password(password)
     db.session.add(user)

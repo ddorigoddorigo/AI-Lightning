@@ -1,60 +1,60 @@
-# Architettura AI Lightning
+# AI Lightning Architecture
 
-## Componenti
+## Components
 
-### Server Principale
-- **Responsabilità**:
-  - Autenticazione utenti
-  - Gestione sessioni
-  - Routing richieste ai nodi
-  - Pagamenti Lightning
-- **Tecnologie**:
+### Main Server
+- **Responsibilities**:
+  - User authentication
+  - Session management
+  - Request routing to nodes
+  - Lightning payments
+- **Technologies**:
   - Python (Flask)
   - PostgreSQL
   - Redis
   - lnd (Lightning Node)
 
-### Nodi Host
-- **Responsabilità**:
-  - Esecuzione modelli LLM
-  - Comunicazione con server principale
-- **Tecnologie**:
+### Host Nodes
+- **Responsibilities**:
+  - LLM model execution
+  - Communication with main server
+- **Technologies**:
   - Python (Flask)
   - llama.cpp (C++)
 
 ### Client
-- **Tipologie**:
+- **Types**:
   - Web (JavaScript)
   - Desktop (Python + Tkinter)
-- **Comunicazione**:
-  - WebSocket al server principale
+- **Communication**:
+  - WebSocket to main server
 
-## Flussi Principali
+## Main Flows
 
-### Registrazione Nodo
-1. Nodo avvia `node_server.py`
-2. Nodo si registra sul server principale
-3. Server salva info del nodo in database e Redis
-4. Nodo invia heartbeat periodico
+### Node Registration
+1. Node starts `node_server.py`
+2. Node registers on main server
+3. Server saves node info in database and Redis
+4. Node sends periodic heartbeat
 
-### Creazione Sessione
-1. Utente richiede una sessione
-2. Server crea fattura Lightning
-3. Utente paga la fattura
-4. Server assegnia la sessione a un nodo disponibile
-5. Nodo avvia istanza di llama.cpp
-6. Utente comunica direttamente con il nodo
+### Session Creation
+1. User requests a session
+2. Server creates Lightning invoice
+3. User pays the invoice
+4. Server assigns session to an available node
+5. Node starts llama.cpp instance
+6. User communicates directly with the node
 
-## Comunicazione
+## Communication
 
 ### Client ↔ Server
-- Protocollo: WebSocket
+- Protocol: WebSocket
 - Port: 443 (HTTPS)
 
-### Server ↔ Nodi
-- Protocollo: HTTP
+### Server ↔ Nodes
+- Protocol: HTTP
 - Port: 9000
 
-### Nodi ↔ llama.cpp
-- Protocollo: TCP
+### Nodes ↔ llama.cpp
+- Protocol: TCP
 - Port: 11000-12000

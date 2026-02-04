@@ -1,7 +1,7 @@
 """
-Gestione dei nodi host.
+Host nodes management.
 
-Usa Redis per coordinamento e selezione dei nodi.
+Uses Redis for coordination and node selection.
 """
 import redis
 import json
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class NodeManager:
     def __init__(self, config):
         """
-        Inizializza connessione a Redis.
+        Initialize Redis connection.
         
         Args:
             config: Flask config object or dict with Redis URL
@@ -25,21 +25,21 @@ class NodeManager:
         self.redis = redis.Redis.from_url(redis_url)
         self.active_sessions = {}  # session_id -> node_info
         
-        # Set per tracciare i nodi (più efficiente di KEYS)
+        # Set to track nodes (more efficient than KEYS)
         self.nodes_set_key = "registered_nodes"
 
     def register_node(self, user_id, address, models, payment_address=None):
         """
-        Registra un nuovo nodo.
+        Register a new node.
 
         Args:
-            user_id: ID dell'utente proprietario
-            address: Indirizzo IP del nodo
-            models: Dict di modelli offerti {name: path}
+            user_id: Owner user ID
+            address: Node IP address
+            models: Dict of offered models {name: path}
             payment_address: Lightning address for direct payments (LNURL, BOLT12, or node pubkey)
 
         Returns:
-            str: ID del nodo
+            str: Node ID
         """
         node_id = f"node-{uuid.uuid4().hex[:8]}"
         self.redis.hset(
@@ -56,24 +56,24 @@ class NodeManager:
                 'total_earned': 0
             }
         )
-        # Aggiungi al set dei nodi registrati (più efficiente di KEYS)
+        # Add to the registered nodes set (more efficient than KEYS)
         self.redis.sadd(self.nodes_set_key, node_id)
         return node_id
 
     def get_available_node(self, model):
         """
-        Trova un nodo disponibile che supporta il modello.
+        Find an available node that supports the model.
 
         Args:
-            model: Nome del modello
+            model: Model name
 
         Returns:
-            dict: Informazioni sul nodo, o None
+            dict: Node information, or None
         """
         best_node = None
         best_score = float('-inf')
 
-        # Usa SMEMBERS invece di KEYS per migliore performance
+        # Use SMEMBERS instead of KEYS for better performance
         for node_id in self.redis.smembers(self.nodes_set_key):
             node_id_str = node_id.decode() if isinstance(node_id, bytes) else node_id
             node_data = self.redis.hgetall(f"node:{node_id_str}")
@@ -81,41 +81,41 @@ class NodeManager:
                 continue
             if (node_data.get(b'status', b'').decode() == 'online' and
                 model in json.loads(node_data.get(b'models', b'{}').decode())):
-                # Seleziona nodo con minor carico
+                # Select node with lowest load
                 load = int(node_data.get(b'load', b'0'))
                 score = 1 / (load + 1)
                 if score > best_score:
                     best_score = score
                     best_node = node_data
-                    best_node[b'id'] = node_id  # Assicura che l'ID sia presente
+                    best_node[b'id'] = node_id  # Ensure the ID is present
 
         return best_node
 
     def start_remote_session(self, node_id, session_id, model, context):
         """
-        Avvia una sessione su un nodo remoto.
+        Start a session on a remote node.
 
         Args:
-            node_id: ID del nodo
-            session_id: ID della sessione
-            model: Nome del modello
-            context: Contesto (n_tokens)
+            node_id: Node ID
+            session_id: Session ID
+            model: Model name
+            context: Context (n_tokens)
 
         Returns:
-            dict: Informazioni sulla sessione
+            dict: Session information
         """
         node = self.redis.hgetall(f"node:{node_id}")
         if not node or node.get(b'status', b'').decode() != 'online':
             raise Exception("Node not available")
 
-        # Ottieni il path del modello dalla config
+        # Get model path from config
         available_models = self.config.get('AVAILABLE_MODELS', {})
         if model not in available_models:
             raise Exception(f"Model {model} not configured")
         
         llama_bin = available_models[model].get('path', '')
 
-        # Chiamata al node server
+        # Call to node server
         response = httpx.post(
             f"http://{node[b'address'].decode()}:9000/api/start_session",
             json={
@@ -124,16 +124,16 @@ class NodeManager:
                 'context': context,
                 'llama_bin': llama_bin
             },
-            timeout=120  # llama.cpp può impiegare tempo ad avviarsi
+            timeout=120  # llama.cpp can take time to start
         )
         response.raise_for_status()
         
-        # Incrementa il carico del nodo
+        # Increment node load
         self.redis.hincrby(f"node:{node_id}", 'load', 1)
         
         result = response.json()
         
-        # Salva le info della sessione per riferimento futuro
+        # Save session info for future reference
         self.active_sessions[str(session_id)] = {
             'node_id': node_id,
             'port': result.get('port'),
@@ -144,10 +144,10 @@ class NodeManager:
 
     def node_heartbeat(self, node_id):
         """
-        Aggiorna stato del nodo.
+        Update node status.
 
         Args:
-            node_id: ID del nodo
+            node_id: Node ID
         """
         self.redis.hset(
             f"node:{node_id}",
@@ -159,13 +159,13 @@ class NodeManager:
 
     def check_node_status(self, node_id):
         """
-        Verifica stato di un nodo.
+        Check node status.
 
         Args:
-            node_id: ID del nodo
+            node_id: Node ID
 
         Returns:
-            bool: True se online
+            bool: True if online
         """
         node_data = self.redis.hgetall(f"node:{node_id}")
         if not node_data:
@@ -175,7 +175,7 @@ class NodeManager:
         return (datetime.utcnow().timestamp() - float(last_ping)) < 30  # 30 sec timeout
 
     def get_all_nodes(self):
-        """Lista tutti i nodi registrati."""
+        """List all registered nodes."""
         nodes = []
         for node_id in self.redis.smembers(self.nodes_set_key):
             node_id_str = node_id.decode() if isinstance(node_id, bytes) else node_id
@@ -186,21 +186,21 @@ class NodeManager:
     
     def unregister_node(self, node_id):
         """
-        Rimuove un nodo dal sistema.
+        Remove a node from the system.
         
         Args:
-            node_id: ID del nodo
+            node_id: Node ID
         """
         self.redis.delete(f"node:{node_id}")
         self.redis.srem(self.nodes_set_key, node_id)
     
     def stop_remote_session(self, node_id, session_id):
         """
-        Ferma una sessione su un nodo remoto.
+        Stop a session on a remote node.
         
         Args:
-            node_id: ID del nodo
-            session_id: ID della sessione
+            node_id: Node ID
+            session_id: Session ID
         """
         node = self.redis.hgetall(f"node:{node_id}")
         if not node:
@@ -221,18 +221,18 @@ class NodeManager:
 
     def pay_node(self, node_id, amount, description, lightning_manager=None):
         """
-        Paga un nodo per una sessione.
+        Pay a node for a session.
         
-        Se il nodo ha un payment_address (Lightning), paga direttamente via Lightning.
-        Altrimenti, accredita il balance dell'utente proprietario.
+        If the node has a payment_address (Lightning), pay directly via Lightning.
+        Otherwise, credit the owner user's balance.
         
-        La commissione della piattaforma è calcolata dal chiamante (Config.NODE_PAYMENT_RATIO).
+        The platform commission is calculated by the caller (Config.NODE_PAYMENT_RATIO).
 
         Args:
-            node_id: ID del nodo
-            amount: Importo in satoshis (già al netto della commissione piattaforma)
-            description: Descrizione del pagamento
-            lightning_manager: LightningManager instance per pagamenti diretti
+            node_id: Node ID
+            amount: Amount in satoshis (net of platform commission)
+            description: Payment description
+            lightning_manager: LightningManager instance for direct payments
         
         Returns:
             dict: {'success': bool, 'method': 'lightning'|'balance', 'error': str|None}
@@ -246,20 +246,20 @@ class NodeManager:
 
         from models import db, User, Transaction
         
-        # Se ha un Lightning address, prova a pagare direttamente
+        # If has a Lightning address, try to pay directly
         if payment_address and lightning_manager:
             try:
-                # Il payment_address può essere:
-                # 1. LNURL (lnurl1...) - richiede risoluzione
-                # 2. Lightning Address (user@domain.com) - richiede risoluzione
-                # 3. Node pubkey + payment request - il nodo genera invoice on-demand
+                # The payment_address can be:
+                # 1. LNURL (lnurl1...) - requires resolution
+                # 2. Lightning Address (user@domain.com) - requires resolution
+                # 3. Node pubkey + payment request - node generates invoice on-demand
                 
-                # Per ora, assumiamo che il nodo generi una invoice via callback
-                # Chiediamo al nodo di generare una invoice per l'importo
+                # For now, we assume the node generates an invoice via callback
+                # Ask the node to generate an invoice for the amount
                 node_address = node_data[b'address'].decode()
                 
                 try:
-                    # Richiedi invoice al nodo
+                    # Request invoice from node
                     invoice_response = httpx.post(
                         f"http://{node_address}:9000/api/create_invoice",
                         json={'amount': amount, 'description': description},
@@ -271,14 +271,14 @@ class NodeManager:
                         payment_request = invoice_data.get('payment_request')
                         
                         if payment_request:
-                            # Paga la invoice
+                            # Pay the invoice
                             pay_result = lightning_manager.pay_invoice(payment_request)
                             
                             if pay_result.get('success'):
-                                # Aggiorna earnings del nodo
+                                # Update node earnings
                                 self.redis.hincrby(f"node:{node_id}", 'total_earned', amount)
                                 
-                                # Registra transazione
+                                # Record transaction
                                 with db.session.begin():
                                     db.session.add(Transaction(
                                         type='node_payment',
@@ -291,16 +291,16 @@ class NodeManager:
                                 return {'success': True, 'method': 'lightning', 'error': None}
                             else:
                                 logger.warning(f"Lightning payment failed: {pay_result.get('error')}")
-                                # Fallback al balance
+                                # Fallback to balance
                 except httpx.RequestError as e:
                     logger.warning(f"Could not request invoice from node: {e}")
-                    # Fallback al balance
+                    # Fallback to balance
                     
             except Exception as e:
                 logger.warning(f"Lightning payment error: {e}")
-                # Fallback al balance
+                # Fallback to balance
         
-        # Fallback: accredita balance dell'utente
+        # Fallback: credit user balance
         try:
             with db.session.begin():
                 owner = User.query.get(user_id)
@@ -314,7 +314,7 @@ class NodeManager:
                         description=description
                     ))
                     
-                    # Aggiorna earnings del nodo
+                    # Update node earnings
                     self.redis.hincrby(f"node:{node_id}", 'total_earned', amount)
             
             logger.info(f"Credited {amount} sats to node {node_id} owner balance")

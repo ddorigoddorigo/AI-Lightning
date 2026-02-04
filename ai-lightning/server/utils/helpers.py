@@ -29,7 +29,7 @@ def validate_model(model_name):
 def get_model_price(model_name, price_from_node=None):
     """
     Get the price per minute for a model.
-    Supporta sia modelli statici (da Config) che dinamici (dai nodi).
+    Supports both static models (from Config) and dynamic models (from nodes).
     
     Args:
         model_name: Name of the model
@@ -38,7 +38,7 @@ def get_model_price(model_name, price_from_node=None):
     Returns:
         int: Price in satoshis per minute
     """
-    # Prima controlla se è un modello statico
+    # First check if it's a static model
     if model_name in Config.AVAILABLE_MODELS:
         return Config.AVAILABLE_MODELS[model_name]['price_per_minute']
     

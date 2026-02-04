@@ -25,12 +25,12 @@ class SocketClient:
         await self.sio.disconnect()
 
     def on(self, event, handler):
-        """Registra un handler per un evento."""
+        """Register a handler for an event."""
         self.callbacks[event] = handler
         self.sio.on(event, handler)
 
     async def emit(self, event, data):
-        """Invia un evento."""
+        """Send an event."""
         await self.sio.emit(event, data)
 
     # Default handlers

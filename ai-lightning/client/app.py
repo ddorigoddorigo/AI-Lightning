@@ -1,7 +1,7 @@
 """
-Entry point del client desktop.
+Desktop client entry point.
 
-Collega GUI e SocketClient.
+Connects GUI and SocketClient.
 """
 import asyncio
 from gui import GUI
@@ -12,18 +12,18 @@ class App:
         self.gui = GUI()
         self.socket_client = SocketClient()
 
-        # Collega callbacks
+        # Connect callbacks
         self.socket_client.on('connect', self.on_connected)
         self.socket_client.on('disconnect', self.on_disconnected)
         self.socket_client.on('session_started', self.on_session_started)
         self.socket_client.on('ai_response', self.on_ai_response)
         self.socket_client.on('error', self.on_error)
 
-        # Avvia interfaccia
+        # Start interface
         self.gui.run()
 
     async def connect(self, token):
-        """Connetti al server."""
+        """Connect to server."""
         await self.socket_client.connect(
             self.gui.config.get('Server', 'URL'),
             token

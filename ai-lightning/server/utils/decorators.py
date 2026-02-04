@@ -94,8 +94,8 @@ def validate_json(*required_fields):
 
 def validate_model_param(f):
     """
-    Decorator per validare il parametro 'model'.
-    Accetta sia modelli statici da Config che modelli dinamici dai nodi.
+    Decorator to validate 'model' parameter.
+    Accepts both static models from Config and dynamic models from nodes.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -103,26 +103,26 @@ def validate_model_param(f):
         if data and 'model' in data:
             model = data['model']
             
-            # Modello valido se:
-            # 1. È in Config.AVAILABLE_MODELS (lista statica)
-            # 2. È un modello dinamico (qualsiasi stringa non vuota)
-            # La validazione effettiva avviene quando si cerca un nodo
+            # Model is valid if:
+            # 1. It's in Config.AVAILABLE_MODELS (static list)
+            # 2. It's a dynamic model (any non-empty string)
+            # Actual validation happens when looking for a node
             
             if not model or not isinstance(model, str):
                 return jsonify({
                     'error': 'Invalid model: model must be a non-empty string'
                 }), 400
             
-            # Permetti qualsiasi modello - sarà validato quando si cerca un nodo
-            # I modelli dinamici vengono dai nodi connessi
+            # Allow any model - will be validated when looking for a node
+            # Dynamic models come from connected nodes
         return f(*args, **kwargs)
     return decorated_function
 
 
 def admin_required(f):
     """
-    Decorator per endpoint solo admin.
-    Richiede @jwt_required() prima.
+    Decorator for admin-only endpoints.
+    Requires @jwt_required() first.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
