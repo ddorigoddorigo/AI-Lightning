@@ -24,6 +24,7 @@
                 <a href="#" onclick="showAboutModal(); return false;">About</a>
                 <a href="#" onclick="showHowItWorksModal(); return false;">How it Works</a>
                 <a href="#" onclick="showBecomeNodeModal(); return false;">Become a Node</a>
+                <a href="#" onclick="showContactModal(); return false;">📧 Contact Us</a>
             </nav>
             <div id="network-status">
                 <span class="status-dot"></span>
@@ -559,6 +560,36 @@
                 </div>
             </div>
         </div>
+
+        <!-- Contact Modal -->
+        <div id="contact-modal" class="modal" style="display: none;">
+            <div class="modal-content modal-info">
+                <span class="close" onclick="closeModal('contact-modal')">&times;</span>
+                <h3>📧 Contact Us</h3>
+                <div class="modal-body">
+                    <p>Have questions, feedback, or need support? We'd love to hear from you!</p>
+                    
+                    <div class="contact-info">
+                        <div class="contact-item">
+                            <span class="contact-icon">📧</span>
+                            <div>
+                                <strong>Email</strong>
+                                <p><a href="mailto:admin@lightphon.com">admin@lightphon.com</a></p>
+                            </div>
+                        </div>
+                        <div class="contact-item">
+                            <span class="contact-icon">🐙</span>
+                            <div>
+                                <strong>GitHub</strong>
+                                <p><a href="https://github.com/ddorigoddorigo/AI-Lightning" target="_blank">Report issues or contribute</a></p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <p class="contact-note">We typically respond within 24-48 hours.</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Footer -->
@@ -588,7 +619,7 @@
             </div>
             <div class="footer-section">
                 <h4>Contact</h4>
-                <p>Open source project</p>
+                <p>📧 <a href="mailto:admin@lightphon.com">admin@lightphon.com</a></p>
                 <p><a href="https://github.com/ddorigoddorigo/AI-Lightning/issues" target="_blank">Report Issues</a></p>
             </div>
         </div>

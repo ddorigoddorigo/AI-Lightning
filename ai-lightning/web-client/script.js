@@ -1844,6 +1844,10 @@ function showBecomeNodeModal() {
     document.getElementById('becomenode-modal').style.display = 'flex';
 }
 
+function showContactModal() {
+    document.getElementById('contact-modal').style.display = 'flex';
+}
+
 function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
 }
