@@ -455,10 +455,11 @@ def pay_session_from_wallet():
         if session.node_id != 'pending':
             return jsonify({'error': 'Session already paid'}), 400
         
-        # Calcola costo (dal pagamento originale o stima)
-        # Il costo è già stato calcolato quando è stata creata la sessione
-        # Recupera dalla invoice originale
-        original_amount = get_lightning_manager().get_invoice_amount(session.payment_hash)
+        # Usa l'importo salvato nella sessione
+        original_amount = session.amount
+        if not original_amount:
+            # Fallback al lightning manager (per sessioni vecchie)
+            original_amount = get_lightning_manager().get_invoice_amount(session.payment_hash)
         if not original_amount:
             return jsonify({'error': 'Could not determine session cost'}), 400
         
@@ -532,7 +533,13 @@ def check_session_payment(session_id):
         if session.node_id and session.node_id != 'pending':
             return jsonify({'paid': True})
         
-        # Verifica pagamento Lightning
+        # In TEST_MODE, non auto-confirm nel polling - l'utente deve usare "Pay with Wallet"
+        # o pagare davvero con Lightning. Questo permette di testare il flusso wallet.
+        if Config.DEBUG:
+            # In debug/test mode, ritorna sempre False per forzare uso del wallet
+            return jsonify({'paid': False})
+        
+        # Verifica pagamento Lightning (solo in produzione)
         payment_verified = get_lightning_manager().check_payment(session.payment_hash)
         
         if payment_verified:
@@ -1082,6 +1089,7 @@ def new_session():
             node_id='pending',
             model=model_requested,
             payment_hash=invoice['r_hash'],
+            amount=amount,  # Salva l'importo per il pagamento wallet
             expires_at=datetime.utcnow() + timedelta(minutes=minutes),
             context_length=context_length
         )

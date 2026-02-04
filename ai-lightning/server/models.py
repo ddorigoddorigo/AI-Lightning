@@ -41,6 +41,7 @@ class Session(db.Model):
     node_id = db.Column(db.String(64), nullable=False)
     model = db.Column(db.String(256), nullable=False)  # Increased to support HuggingFace repo names
     payment_hash = db.Column(db.String(64), unique=True, nullable=False)
+    amount = db.Column(db.Integer, nullable=True)  # Amount in satoshis
     expires_at = db.Column(db.DateTime, nullable=False)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

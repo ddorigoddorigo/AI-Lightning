@@ -331,20 +331,9 @@ class NodeGUI:
                     self.auth_token = data.get('token')
                     self.root.after(0, lambda: self._on_login_success(data))
                 else:
-                    # Gestisci risposte non-JSON
-                    try:
-                        error_data = response.json()
-                        error = error_data.get('error', 'Login fallito')
-                    except (ValueError, json.JSONDecodeError):
-                        error = f"Errore server: {response.status_code}"
-                    self.root.after(0, lambda e=error: self.login_status.set(f"❌ {e}"))
+                    error = response.json().get('error', 'Login fallito')
+                    self.root.after(0, lambda: self.login_status.set(f"❌ {error}"))
                     self.root.after(0, lambda: self.login_btn.config(state='normal'))
-            except requests.exceptions.ConnectionError:
-                self.root.after(0, lambda: self.login_status.set("❌ Server non raggiungibile"))
-                self.root.after(0, lambda: self.login_btn.config(state='normal'))
-            except requests.exceptions.Timeout:
-                self.root.after(0, lambda: self.login_status.set("❌ Timeout connessione"))
-                self.root.after(0, lambda: self.login_btn.config(state='normal'))
             except Exception as e:
                 self.root.after(0, lambda: self.login_status.set(f"❌ Errore: {e}"))
                 self.root.after(0, lambda: self.login_btn.config(state='normal'))
@@ -419,17 +408,8 @@ class NodeGUI:
                     self.root.after(0, self._show_login)
                     self.root.after(0, lambda: self.login_username.set(username))
                 else:
-                    # Gestisci risposte non-JSON
-                    try:
-                        error_data = response.json()
-                        error = error_data.get('error', 'Registrazione fallita')
-                    except (ValueError, json.JSONDecodeError):
-                        error = f"Errore server: {response.status_code}"
-                    self.root.after(0, lambda e=error: self.register_status.set(f"❌ {e}"))
-            except requests.exceptions.ConnectionError:
-                self.root.after(0, lambda: self.register_status.set("❌ Server non raggiungibile"))
-            except requests.exceptions.Timeout:
-                self.root.after(0, lambda: self.register_status.set("❌ Timeout connessione"))
+                    error = response.json().get('error', 'Registrazione fallita')
+                    self.root.after(0, lambda: self.register_status.set(f"❌ {error}"))
             except Exception as e:
                 self.root.after(0, lambda: self.register_status.set(f"❌ Errore: {e}"))
         
@@ -1607,7 +1587,7 @@ class NodeGUI:
     def _start_updater(self):
         """Avvia il controllo automatico degli aggiornamenti"""
         self.updater.start_checking(interval=3600)  # Ogni ora
-        self.log("Auto-updater avviato")
+        self._log("Auto-updater avviato")
     
     def _on_update_available(self, version, changelog, download_url):
         """Callback chiamato quando è disponibile un aggiornamento"""
@@ -1617,7 +1597,7 @@ class NodeGUI:
     
     def _show_update_notification(self, version, changelog):
         """Mostra notifica di aggiornamento disponibile"""
-        self.log(f"🔄 Aggiornamento disponibile: v{version}")
+        self._log(f"🔄 Aggiornamento disponibile: v{version}")
         self.status_var.set(f"Aggiornamento disponibile: v{version}")
         
         # Mostra dialog
@@ -1635,7 +1615,7 @@ class NodeGUI:
     
     def _download_and_apply_update(self):
         """Scarica e applica l'aggiornamento"""
-        self.log("Scaricamento aggiornamento in corso...")
+        self._log("Scaricamento aggiornamento in corso...")
         self.status_var.set("Scaricamento aggiornamento...")
         
         def download_thread():
@@ -1661,7 +1641,7 @@ class NodeGUI:
     
     def _apply_update(self, update_path):
         """Applica l'aggiornamento scaricato"""
-        self.log(f"Applicazione aggiornamento da {update_path}...")
+        self._log(f"Applicazione aggiornamento da {update_path}...")
         
         response = messagebox.askyesno(
             "Applicare Aggiornamento",
@@ -1678,20 +1658,20 @@ class NodeGUI:
             
             # Applica update
             if self.updater.apply_update(update_path):
-                self.log("Aggiornamento in corso, chiusura applicazione...")
+                self._log("Aggiornamento in corso, chiusura applicazione...")
                 self.root.after(1000, self.root.destroy)
             else:
                 self._update_failed("Impossibile applicare l'aggiornamento")
     
     def _update_failed(self, error):
         """Gestisce errore di aggiornamento"""
-        self.log(f"❌ Aggiornamento fallito: {error}")
+        self._log(f"❌ Aggiornamento fallito: {error}")
         self.status_var.set("Aggiornamento fallito")
         messagebox.showerror("Errore Aggiornamento", f"Impossibile aggiornare:\n{error}")
     
     def check_update_manual(self):
         """Controllo manuale degli aggiornamenti"""
-        self.log("Controllo aggiornamenti...")
+        self._log("Controllo aggiornamenti...")
         self.status_var.set("Controllo aggiornamenti...")
         
         def check_thread():
@@ -1703,7 +1683,7 @@ class NodeGUI:
                 ))
             else:
                 self.root.after(0, lambda: (
-                    self.log("✓ Nessun aggiornamento disponibile"),
+                    self._log("✓ Nessun aggiornamento disponibile"),
                     self.status_var.set(f"Versione {VERSION} è la più recente"),
                     messagebox.showinfo("Aggiornamenti", f"Stai usando la versione più recente (v{VERSION})")
                 ))
