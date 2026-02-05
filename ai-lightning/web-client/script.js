@@ -99,6 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
         showMain();
         loadModels();
         startModelsRefresh();
+        
+        // Check if there's a pending session to restore
+        restoreSessionState();
     } else {
         console.log('No auth token, showing login');
         showAuth();
@@ -394,6 +397,66 @@ async function updateBalance() {
         }
     } catch (error) {
         console.error('Error updating balance:', error);
+    }
+}
+
+// Restore session state after page refresh
+async function restoreSessionState() {
+    const savedSessionId = localStorage.getItem('sessionId');
+    const sessionState = localStorage.getItem('sessionState');
+    
+    console.log('restoreSessionState: savedSessionId=', savedSessionId, 'sessionState=', sessionState);
+    
+    if (!savedSessionId) return;
+    
+    currentSession = savedSessionId;
+    
+    // Check session status on server
+    try {
+        const response = await fetch(`/api/session/${savedSessionId}/status`, {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!response.ok) {
+            // Session not found or error - clear state
+            console.log('Session not found, clearing state');
+            localStorage.removeItem('sessionId');
+            localStorage.removeItem('sessionState');
+            currentSession = null;
+            return;
+        }
+        
+        const data = await response.json();
+        console.log('Session status:', data);
+        
+        if (data.active && data.node_id && data.node_id !== 'pending') {
+            // Session is active - go to chat
+            console.log('Session is active, restoring chat view');
+            selectedModel = { name: data.model };
+            startChatUI();
+            
+            // Update expires display
+            const expiresEl = document.getElementById('session-expires');
+            if (expiresEl && data.expires_at) {
+                expiresEl.textContent = `Expires: ${new Date(data.expires_at).toLocaleTimeString()}`;
+            }
+        } else if (sessionState === 'loading') {
+            // Payment was done, waiting for model to load
+            console.log('Session is loading, showing loading overlay');
+            showLoadingOverlay('Connecting to node... Waiting for model to load.');
+            // The socket events will handle the rest
+        } else if (data.node_id === 'pending') {
+            // Payment pending - don't restore (user should pay again or session expired)
+            console.log('Session pending payment, clearing');
+            localStorage.removeItem('sessionId');
+            localStorage.removeItem('sessionState');
+            currentSession = null;
+        }
+    } catch (error) {
+        console.error('Error restoring session:', error);
+        localStorage.removeItem('sessionId');
+        localStorage.removeItem('sessionState');
+        currentSession = null;
     }
 }
 
@@ -1423,6 +1486,16 @@ function startPaymentPolling() {
                     console.log('Payment confirmed! Starting session...');
                     stopPaymentPolling();
                     
+                    // Disable cancel button - payment is done
+                    const cancelBtn = document.querySelector('#invoice-section .btn-secondary');
+                    if (cancelBtn) {
+                        cancelBtn.disabled = true;
+                        cancelBtn.textContent = 'Payment confirmed...';
+                    }
+                    
+                    // Save state for page refresh
+                    localStorage.setItem('sessionState', 'loading');
+                    
                     // Update balance if auto-paid from wallet
                     if (data.auto_paid && data.new_balance !== undefined) {
                         userBalance = data.new_balance;
@@ -1571,6 +1644,7 @@ function cancelPayment() {
     currentInvoice = null;
     currentInvoiceAmount = 0;
     localStorage.removeItem('sessionId');
+    localStorage.removeItem('sessionState');
     
     // Hide invoice section
     document.getElementById('invoice-section').style.display = 'none';
@@ -1626,15 +1700,16 @@ function endSession() {
         currentSession = null;
         selectedModel = null;
         localStorage.removeItem('sessionId');
+        localStorage.removeItem('sessionState');
         
         // Reset streaming state
         currentStreamingMessageId = null;
         streamingContent = '';
         
         document.getElementById('chat-section').style.display = 'none';
-        document.getElementById('models-section').style.display = 'block';
+        document.getElementById('nodes-section').style.display = 'block';
         
-        loadModels();
+        loadNodes();
     }
 }
 

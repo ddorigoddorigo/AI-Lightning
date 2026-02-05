@@ -611,6 +611,31 @@ def pay_session_from_wallet():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/session/<int:session_id>/status', methods=['GET'])
+@jwt_required()
+def get_session_status(session_id):
+    """Get session status for restoring UI after page refresh."""
+    try:
+        user_id = get_jwt_identity()
+        
+        session = Session.query.get(session_id)
+        if not session or session.user_id != int(user_id):
+            return jsonify({'error': 'Session not found'}), 404
+        
+        return jsonify({
+            'session_id': session.id,
+            'model': session.model,
+            'node_id': session.node_id,
+            'active': session.active,
+            'expires_at': session.expires_at.isoformat() + 'Z' if session.expires_at else None,
+            'expired': session.expired if hasattr(session, 'expired') else False
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting session status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/session/<int:session_id>/check_payment', methods=['GET'])
 @jwt_required()
 def check_session_payment(session_id):
