@@ -23,6 +23,7 @@ let sessionContextLength = 4096;
 
 // Payment state
 let currentInvoiceAmount = 0;
+let currentInvoice = null;
 let paymentPollingInterval = null;
 
 // Wallet state
@@ -1209,26 +1210,19 @@ async function createSession() {
         // IMPORTANT: Save session_id BEFORE everything else
         currentSession = data.session_id;
         currentInvoiceAmount = data.amount;
+        currentInvoice = data.invoice;  // Save invoice for QR
         localStorage.setItem('sessionId', currentSession);
         console.log('Session created, currentSession:', currentSession);
 
-        // Mostra invoice
+        // Mostra invoice section
         document.getElementById('session-config').style.display = 'none';
         document.getElementById('invoice-section').style.display = 'block';
-        document.getElementById('invoice').textContent = data.invoice;
         document.getElementById('invoice-amount').textContent = data.amount.toLocaleString();
         
-        // Mostra opzione wallet se ha saldo sufficiente
-        const walletOption = document.getElementById('wallet-payment-option');
+        // Mostra saldo wallet attuale
         const walletBalanceEl = document.getElementById('payment-wallet-balance');
         const currentBalance = parseInt(document.getElementById('balance-amount')?.textContent?.replace(/,/g, '') || '0');
-        
-        if (currentBalance >= data.amount) {
-            walletOption.style.display = 'block';
-            walletBalanceEl.textContent = currentBalance.toLocaleString();
-        } else {
-            walletOption.style.display = 'none';
-        }
+        walletBalanceEl.textContent = currentBalance.toLocaleString();
         
         // Generate QR code (can fail without blocking)
         try {
@@ -1237,7 +1231,7 @@ async function createSession() {
             console.error('QR code generation failed:', qrError);
         }
         
-        // Start automatic polling to verify payment
+        // Start automatic polling to verify payment (auto-pay from wallet happens server-side)
         startPaymentPolling();
         
     } catch (error) {
