@@ -94,11 +94,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     if (authToken) {
+        console.log('Auth token found, initializing app...');
         connectSocket();
         showMain();
         loadModels();
         startModelsRefresh();
     } else {
+        console.log('No auth token, showing login');
         showAuth();
     }
     
@@ -1159,21 +1161,25 @@ document.addEventListener('DOMContentLoaded', () => {
 // Session Management
 // ===========================================
 async function createSession() {
-    console.log('createSession called');
+    console.log('=== createSession called ===');
     console.log('selectedModel:', selectedModel);
     console.log('selectedNode:', selectedNode);
     
     if (!selectedModel) {
+        console.error('No model selected!');
         showError('Please select a model first');
         return;
     }
     
     if (!selectedNode) {
+        console.error('No node selected!');
         showError('Please select a node first');
         return;
     }
     
-    const minutes = parseInt(document.getElementById('minutes').value);
+    const minutesEl = document.getElementById('minutes');
+    console.log('minutes element:', minutesEl);
+    const minutes = parseInt(minutesEl?.value || '5');
     console.log('minutes:', minutes);
     
     if (minutes < 1 || minutes > 120) {
