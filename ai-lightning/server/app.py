@@ -1991,6 +1991,21 @@ def process_session_refund(session, reason='node_disconnect'):
         if user:
             user.balance += refund_amount
             logger.info(f"Refunded {refund_amount} sats to user {user.username} (session {session.id}, reason: {reason})")
+            
+            # Create refund transaction for wallet history
+            from models import Transaction
+            refund_tx = Transaction(
+                type='refund',
+                user_id=user.id,
+                amount=refund_amount,  # Positive = credit
+                fee=0,
+                balance_after=user.balance,
+                status='completed',
+                description=f'Refund for session {session.id}: {reason}',
+                reference_id=f'session_{session.id}',
+                completed_at=now
+            )
+            db.session.add(refund_tx)
         
         # Mark session as refunded and ended
         session.refunded = True

@@ -2444,7 +2444,8 @@ function formatTxType(type) {
         'session_payment': '⬆️ Session Payment',
         'node_earning': '💰 Node Earning',
         'commission': '📊 Commission',
-        'withdrawal': '📤 Withdrawal'
+        'withdrawal': '📤 Withdrawal',
+        'refund': '↩️ Refund'
     };
     return types[type] || type;
 }

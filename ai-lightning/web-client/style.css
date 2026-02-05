@@ -1999,6 +1999,7 @@ button:disabled {
 .transaction-type.session_payment { color: var(--error); }
 .transaction-type.node_earning { color: var(--success); }
 .transaction-type.commission { color: var(--warning); }
+.transaction-type.refund { color: #9b59b6; } /* Purple for refunds */
 
 .transaction-desc {
     font-size: 0.9em;

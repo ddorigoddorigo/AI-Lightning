@@ -389,6 +389,11 @@ class ModelManager:
         
         for filename in os.listdir(self.models_dir):
             if filename.lower().endswith('.gguf'):
+                # Skip mmproj/CLIP files - these are multimodal projectors, not main models
+                if 'mmproj' in filename.lower() or 'clip' in filename.lower():
+                    logger.info(f"Skipping mmproj/CLIP file (not a main model): {filename}")
+                    continue
+                
                 filepath = os.path.join(self.models_dir, filename)
                 
                 try:

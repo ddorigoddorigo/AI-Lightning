@@ -161,9 +161,20 @@ class LlamaProcess:
                 logger.info("Using HuggingFace token for authentication")
         else:
             # Usa modello locale
-            if not self.model_source or not os.path.exists(self.model_source):
-                logger.error(f"Model file not found: {self.model_source}")
+            logger.info(f"Checking local model: {self.model_source}")
+            if not self.model_source:
+                logger.error(f"Model source is None or empty!")
                 return False
+            if not os.path.exists(self.model_source):
+                logger.error(f"Model file not found at path: {self.model_source}")
+                logger.error(f"Current working directory: {os.getcwd()}")
+                # List files in directory to debug
+                parent_dir = os.path.dirname(self.model_source) if self.model_source else '.'
+                if os.path.exists(parent_dir):
+                    logger.error(f"Files in {parent_dir}: {os.listdir(parent_dir)[:10]}")
+                return False
+            
+            logger.info(f"Model file found, size: {os.path.getsize(self.model_source) / (1024**3):.2f} GB")
             
             cmd = [
                 self.llama_command,
@@ -798,9 +809,15 @@ class NodeClient:
             
             # Cerca tramite ModelManager
             elif self.model_manager:
+                logger.info(f"Searching ModelManager for model_id={model_id}")
+                logger.info(f"Available models in ModelManager: {list(self.model_manager.models.keys())}")
+                
                 model_info = self.model_manager.get_model_by_id(model_id)
+                logger.info(f"get_model_by_id({model_id}) returned: {model_info}")
+                
                 if not model_info:
                     model_info = self.model_manager.get_model_by_name(model_name)
+                    logger.info(f"get_model_by_name({model_name}) returned: {model_info}")
                 
                 if model_info:
                     # Check if it's a HuggingFace model
@@ -811,12 +828,16 @@ class NodeClient:
                     elif hasattr(model_info, 'filepath') and model_info.filepath:
                         model_source = model_info.filepath
                         use_hf = False
+                        logger.info(f"Using local model filepath: {model_source}")
                         # Verifica che il filepath sia un file, non una directory
                         if os.path.isdir(model_source):
                             corrected_path = os.path.join(self.model_manager.models_dir, model_info.filename)
                             logger.warning(f"filepath was a directory, correcting to: {corrected_path}")
                             model_source = corrected_path
-                        logger.info(f"Found local model: {model_source}")
+                        # Verifica che il file esista
+                        if not os.path.exists(model_source):
+                            logger.error(f"Model file does not exist at: {model_source}")
+                        logger.info(f"Found local model: {model_source}, exists={os.path.exists(model_source)}")
                     
                     context = getattr(model_info, 'context_length', context) or context
                 else:
