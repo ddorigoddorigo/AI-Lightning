@@ -1936,6 +1936,123 @@ def update_node_stats(node_id):
     return jsonify({'status': 'ok', 'stats': stats.to_dict()})
 
 
+def process_session_refund(session, reason='node_disconnect'):
+    """
+    Calculate and process refund for a session interrupted before expiry.
+    
+    Args:
+        session: Session object
+        reason: Reason for refund (node_disconnect, node_error, etc.)
+        
+    Returns:
+        int: Amount refunded in satoshis, or 0 if no refund
+    """
+    try:
+        if not session or not session.active:
+            return 0
+        
+        if session.refunded:
+            logger.info(f"Session {session.id} already refunded")
+            return 0
+        
+        if not session.amount or session.amount <= 0:
+            logger.info(f"Session {session.id} has no payment amount")
+            return 0
+        
+        now = datetime.utcnow()
+        
+        # Calculate time used vs time paid
+        if session.started_at:
+            # Session actually started - calculate used time
+            time_used = (now - session.started_at).total_seconds()
+            total_time = (session.expires_at - session.started_at).total_seconds()
+        else:
+            # Session never started (node crashed before ready) - full refund
+            time_used = 0
+            total_time = (session.expires_at - session.created_at).total_seconds()
+        
+        if total_time <= 0:
+            logger.error(f"Session {session.id} has invalid total_time: {total_time}")
+            return 0
+        
+        # Calculate remaining time percentage
+        time_remaining = max(0, total_time - time_used)
+        refund_percentage = time_remaining / total_time
+        
+        # Calculate refund amount (round down)
+        refund_amount = int(session.amount * refund_percentage)
+        
+        if refund_amount <= 0:
+            logger.info(f"Session {session.id} no refund needed (used {time_used:.0f}s of {total_time:.0f}s)")
+            return 0
+        
+        # Credit refund to user's balance
+        user = session.user
+        if user:
+            user.balance += refund_amount
+            logger.info(f"Refunded {refund_amount} sats to user {user.username} (session {session.id}, reason: {reason})")
+        
+        # Mark session as refunded and ended
+        session.refunded = True
+        session.refund_amount = refund_amount
+        session.active = False
+        session.ended_at = now
+        
+        db.session.commit()
+        
+        # Notify user via socket if connected
+        try:
+            socketio.emit('session_refunded', {
+                'session_id': session.id,
+                'refund_amount': refund_amount,
+                'reason': reason,
+                'new_balance': user.balance if user else 0
+            }, room=str(session.id))
+        except Exception as e:
+            logger.error(f"Error notifying user of refund: {e}")
+        
+        return refund_amount
+        
+    except Exception as e:
+        logger.error(f"Error processing refund for session {session.id}: {e}")
+        db.session.rollback()
+        return 0
+
+
+def refund_active_sessions_for_node(node_id, reason='node_disconnect'):
+    """
+    Refund all active sessions for a node that disconnected.
+    
+    Args:
+        node_id: Node ID that disconnected
+        reason: Reason for refund
+        
+    Returns:
+        list: List of (session_id, refund_amount) tuples
+    """
+    refunds = []
+    try:
+        # Find all active sessions for this node
+        active_sessions = Session.query.filter_by(
+            node_id=node_id, 
+            active=True,
+            refunded=False
+        ).all()
+        
+        logger.info(f"Found {len(active_sessions)} active sessions for disconnected node {node_id}")
+        
+        for session in active_sessions:
+            refund_amount = process_session_refund(session, reason)
+            if refund_amount > 0:
+                refunds.append((session.id, refund_amount))
+        
+        return refunds
+        
+    except Exception as e:
+        logger.error(f"Error refunding sessions for node {node_id}: {e}")
+        return refunds
+
+
 def update_node_stats_internal(node_id, **kwargs):
     """Helper to update statistics internally."""
     from models import NodeStats
@@ -2169,6 +2286,14 @@ def handle_disconnect():
             
             logger.info(f"Node {node_id} disconnected")
             
+            # Refund active sessions for this node
+            try:
+                refunds = refund_active_sessions_for_node(node_id, reason='node_disconnect')
+                if refunds:
+                    logger.info(f"Processed {len(refunds)} refunds for node {node_id}: {refunds}")
+            except Exception as e:
+                logger.error(f"Error processing refunds for node {node_id}: {e}")
+            
             # Send offline notification email to owner
             if owner_user_id:
                 try:
@@ -2198,6 +2323,16 @@ def handle_node_session_started(data):
     
     logger.info(f"Node confirms session {session_id} started")
     
+    # Update session started_at timestamp
+    try:
+        session = Session.query.get(int(session_id))
+        if session and not session.started_at:
+            session.started_at = datetime.utcnow()
+            db.session.commit()
+            logger.info(f"Session {session_id} started_at set to {session.started_at}")
+    except Exception as e:
+        logger.error(f"Error updating session started_at: {e}")
+    
     # Update node stats
     if node_id:
         update_node_stats_internal(node_id, add_session=True)
@@ -2214,6 +2349,16 @@ def handle_node_session_error(data):
     node_id = data.get('node_id')
     
     logger.error(f"Node error for session {session_id}: {error}")
+    
+    # Refund the session since it failed
+    try:
+        session = Session.query.get(int(session_id))
+        if session:
+            refund_amount = process_session_refund(session, reason=f'node_error: {error}')
+            if refund_amount > 0:
+                logger.info(f"Refunded {refund_amount} sats for failed session {session_id}")
+    except Exception as e:
+        logger.error(f"Error processing refund for session {session_id}: {e}")
     
     # Update node stats (failed session)
     if node_id:

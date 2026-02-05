@@ -45,6 +45,10 @@ class Session(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)  # When node confirmed session ready
+    ended_at = db.Column(db.DateTime, nullable=True)  # When session ended
+    refunded = db.Column(db.Boolean, default=False)  # True if user was refunded
+    refund_amount = db.Column(db.Integer, default=0)  # Amount refunded in satoshis
     context_length = db.Column(db.Integer, default=4096)  # Context length for the model
 
     user = db.relationship('User', backref='sessions')

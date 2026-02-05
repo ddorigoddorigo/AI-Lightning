@@ -1889,6 +1889,40 @@ function connectSocket() {
         addMessage('System', 'Session ended. The AI model has been stopped.');
     });
     
+    // Event: session was refunded due to node disconnect/error
+    socket.on('session_refunded', (data) => {
+        console.log('Session refunded:', data);
+        const refundAmount = data.refund_amount || 0;
+        const reason = data.reason || 'unknown';
+        const newBalance = data.new_balance || 0;
+        
+        // Update user balance
+        userBalance = newBalance;
+        const balanceEl = document.getElementById('user-balance');
+        if (balanceEl) {
+            balanceEl.textContent = `${newBalance.toLocaleString()} sats`;
+        }
+        
+        // Show refund notification
+        let reasonText = 'The node disconnected or encountered an error.';
+        if (reason === 'node_disconnect') {
+            reasonText = 'The node has disconnected.';
+        } else if (reason.startsWith('node_error')) {
+            reasonText = 'The node encountered an error.';
+        }
+        
+        addMessage('System', `⚠️ Session interrupted! ${reasonText} You have been refunded ${refundAmount.toLocaleString()} sats for the unused time. Your new balance is ${newBalance.toLocaleString()} sats.`);
+        
+        // End the session in UI
+        sessionActive = false;
+        currentSession = null;
+        localStorage.removeItem('sessionId');
+        localStorage.removeItem('sessionState');
+        
+        // Optionally show an alert
+        alert(`Session interrupted! You have been refunded ${refundAmount.toLocaleString()} sats.`);
+    });
+    
     // Event: a node was freed, update the models list
     socket.on('node_freed', (data) => {
         console.log('Node freed:', data.node_id);
