@@ -131,9 +131,19 @@ class LightningManager:
         
         response = self._request('POST', '/v1/invoices', data)
         
-        # r_hash is in base64, convert to hex
+        # r_hash is in base64, convert to hex for storage
         r_hash_b64 = response.get('r_hash', '')
-        r_hash_hex = base64.b64decode(r_hash_b64).hex() if r_hash_b64 else ''
+        try:
+            # LND returns standard base64, may need padding
+            padding = 4 - len(r_hash_b64) % 4
+            if padding != 4:
+                r_hash_b64 += '=' * padding
+            r_hash_hex = base64.b64decode(r_hash_b64).hex() if r_hash_b64 else ''
+        except Exception as e:
+            logger.error(f"Error decoding r_hash: {e}, using raw value")
+            r_hash_hex = r_hash_b64  # fallback to raw value
+        
+        logger.info(f"Created invoice: r_hash_b64={r_hash_b64[:20]}..., r_hash_hex={r_hash_hex[:20]}...")
         
         return {
             'payment_request': response.get('payment_request', ''),
@@ -146,7 +156,7 @@ class LightningManager:
         Check payment status.
 
         Args:
-            r_hash: Payment hash (hex string)
+            r_hash: Payment hash (hex string or base64)
 
         Returns:
             bool: True if paid
@@ -157,9 +167,15 @@ class LightningManager:
             return True
         
         try:
-            # Convert hex to URL-safe base64
-            r_hash_bytes = bytes.fromhex(r_hash)
-            r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
+            # Try to determine if r_hash is hex or base64
+            try:
+                # If it's valid hex, convert to base64
+                r_hash_bytes = bytes.fromhex(r_hash)
+                r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
+            except ValueError:
+                # It might already be base64 - use as-is or try to decode
+                # Remove any padding and use directly
+                r_hash_b64 = r_hash.rstrip('=')
             
             response = self._request('GET', f'/v1/invoice/{r_hash_b64}')
             
