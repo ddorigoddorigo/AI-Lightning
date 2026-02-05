@@ -1568,10 +1568,25 @@ function cancelPayment() {
     stopPaymentPolling();
     
     currentSession = null;
+    currentInvoice = null;
     currentInvoiceAmount = 0;
     localStorage.removeItem('sessionId');
+    
+    // Hide invoice section
     document.getElementById('invoice-section').style.display = 'none';
-    document.getElementById('session-config').style.display = 'block';
+    
+    // Go back to nodes selection (the starting view)
+    document.getElementById('session-config').style.display = 'none';
+    document.getElementById('models-section').style.display = 'none';
+    document.getElementById('chat-section').style.display = 'none';
+    document.getElementById('nodes-section').style.display = 'block';
+    
+    // Reset selections
+    selectedNode = null;
+    selectedModel = null;
+    
+    // Reload nodes
+    loadNodes();
 }
 
 function startChatUI() {
