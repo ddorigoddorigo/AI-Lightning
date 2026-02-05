@@ -1044,18 +1044,32 @@ button:disabled {
 #qr-container {
     display: flex;
     justify-content: center;
-    margin: 20px 0;
+    align-items: center;
+    margin: 20px auto;
     padding: 20px;
     background: white;
     border-radius: 12px;
     width: fit-content;
-    margin-left: auto;
-    margin-right: auto;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
 #qr-code {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#qr-code canvas,
+#qr-code img {
     display: block;
+    margin: 0 auto;
+}
+
+.qr-hint {
+    text-align: center;
+    color: var(--text-secondary);
+    margin: 10px 0 15px 0;
+    font-size: 0.9em;
 }
 
 /* Wallet Payment Option */

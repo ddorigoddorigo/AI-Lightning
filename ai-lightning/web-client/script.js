@@ -1225,11 +1225,16 @@ async function createSession() {
         document.getElementById('invoice-section').style.display = 'block';
         document.getElementById('invoice-amount').textContent = data.amount.toLocaleString();
         
+        // Store invoice for copy functionality
+        const invoiceTextEl = document.getElementById('invoice-text');
+        if (invoiceTextEl) {
+            invoiceTextEl.value = data.invoice;
+        }
+        
         // Mostra saldo wallet attuale
         const walletBalanceEl = document.getElementById('payment-wallet-balance');
-        const currentBalance = parseInt(document.getElementById('balance-amount')?.textContent?.replace(/,/g, '') || '0');
         if (walletBalanceEl) {
-            walletBalanceEl.textContent = currentBalance.toLocaleString();
+            walletBalanceEl.textContent = userBalance.toLocaleString();
         }
         
         // Generate QR code (can fail without blocking)
@@ -1283,7 +1288,12 @@ function openInWallet() {
 }
 
 function copyInvoice() {
-    const invoice = document.getElementById('invoice').textContent;
+    // Use hidden field or global variable
+    const invoice = document.getElementById('invoice-text')?.value || currentInvoice;
+    if (!invoice) {
+        showError('No invoice to copy');
+        return;
+    }
     navigator.clipboard.writeText(invoice).then(() => {
         showSuccess('Invoice copied to clipboard!');
     }).catch(() => {

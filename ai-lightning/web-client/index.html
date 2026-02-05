@@ -303,12 +303,16 @@
                 </div>
                 
                 <!-- QR Code for external payment -->
-                <div class="qr-container">
+                <div id="qr-container">
                     <div id="qr-code"></div>
-                    <p class="qr-hint">Or scan to pay with external wallet</p>
                 </div>
+                <p class="qr-hint">Or scan/copy to pay with external wallet</p>
+                
+                <!-- Hidden invoice for copy -->
+                <input type="hidden" id="invoice-text" value="">
                 
                 <div class="payment-buttons">
+                    <button onclick="copyInvoice()" class="btn-primary">📋 Copy Invoice</button>
                     <button onclick="cancelPayment()" class="btn-secondary">Cancel</button>
                 </div>
             </div>
