@@ -762,6 +762,9 @@ class NodeClient:
         @self.sio.on('start_session')
         def on_start_session(data):
             """Richiesta di avviare una sessione"""
+            logger.info(f"=== RECEIVED start_session event ===")
+            logger.info(f"start_session data: {data}")
+            
             session_id = str(data['session_id'])
             model_id = data.get('model_id') or data.get('model')
             model_name = data.get('model_name', model_id)

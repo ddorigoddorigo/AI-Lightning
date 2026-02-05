@@ -1546,6 +1546,7 @@ def start_session(data):
                 start_data['hf_repo'] = final_hf_repo
                 logger.info(f"Session {session.id} will use HF model: {final_hf_repo}")
             
+            logger.info(f"Sending start_session to node room 'node_{ws_node_id}': {start_data}")
             socketio.emit('start_session', start_data, room=f"node_{ws_node_id}")
             
             join_room(str(session.id))
@@ -1555,7 +1556,7 @@ def start_session(data):
                 'expires_at': session.expires_at.isoformat() + 'Z'
             })
             
-            logger.info(f"Session {session.id} started on WebSocket node {ws_node_id}")
+            logger.info(f"Session {session.id} started on WebSocket node {ws_node_id}, client notified")
             return
             
         except Exception as e:
