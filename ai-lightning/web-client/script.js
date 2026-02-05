@@ -1720,11 +1720,26 @@ function connectSocket() {
         }
         
         showError(data.message || 'Unknown error');
-        // Also add to chat if visible
+        
+        // Check if we're in a broken state (no visible main section)
         const chatSection = document.getElementById('chat-section');
+        const sessionConfig = document.getElementById('session-config');
+        const invoiceSection = document.getElementById('invoice-section');
+        
+        // If chat is visible, add message and enable input
         if (chatSection && chatSection.style.display !== 'none') {
             addMessage('System', `Error: ${data.message}`);
             enableInput();
+        } 
+        // If we're in payment/loading flow and got an error, go back to session config
+        else if (invoiceSection && invoiceSection.style.display === 'none' && 
+                 sessionConfig && sessionConfig.style.display === 'none') {
+            // We're in a broken state - reset to session config
+            console.log('Resetting UI to session config after error');
+            sessionConfig.style.display = 'block';
+            // Clear session since it failed
+            currentSession = null;
+            localStorage.removeItem('sessionId');
         }
     });
 
