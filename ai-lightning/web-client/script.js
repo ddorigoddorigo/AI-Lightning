@@ -30,6 +30,7 @@ let paymentPollingInterval = null;
 let currentDepositHash = null;
 let depositCheckInterval = null;
 let walletTransactionsPage = 1;
+let userBalance = 0;  // User's wallet balance in sats
 
 // Admin state
 let isAdmin = false;
@@ -344,10 +345,15 @@ async function loadUserProfile() {
 }
 
 function updateBalanceDisplay(balance) {
+    // Save to global state
+    if (typeof balance === 'number') {
+        userBalance = balance;
+    }
+    
     // Update userbar balance
     const balanceEl = document.getElementById('balance-amount');
     if (balanceEl) {
-        balanceEl.textContent = balance.toLocaleString();
+        balanceEl.textContent = userBalance.toLocaleString();
         
         // Color based on balance
         const container = document.getElementById('user-balance');
@@ -366,11 +372,11 @@ function updateBalanceDisplay(balance) {
     // Also update wallet tab if it exists
     const walletBalanceSats = document.getElementById('wallet-balance-sats');
     if (walletBalanceSats) {
-        walletBalanceSats.textContent = balance.toLocaleString();
+        walletBalanceSats.textContent = userBalance.toLocaleString();
     }
     const walletBalanceBtc = document.getElementById('wallet-balance-btc');
     if (walletBalanceBtc) {
-        walletBalanceBtc.textContent = `≈ ${(balance / 100_000_000).toFixed(8)} BTC`;
+        walletBalanceBtc.textContent = `≈ ${(userBalance / 100_000_000).toFixed(8)} BTC`;
     }
 }
 
@@ -1222,7 +1228,9 @@ async function createSession() {
         // Mostra saldo wallet attuale
         const walletBalanceEl = document.getElementById('payment-wallet-balance');
         const currentBalance = parseInt(document.getElementById('balance-amount')?.textContent?.replace(/,/g, '') || '0');
-        walletBalanceEl.textContent = currentBalance.toLocaleString();
+        if (walletBalanceEl) {
+            walletBalanceEl.textContent = currentBalance.toLocaleString();
+        }
         
         // Generate QR code (can fail without blocking)
         try {
