@@ -623,12 +623,19 @@ def check_session_payment(session_id):
         if not session or session.user_id != int(user_id):
             return jsonify({'error': 'Session not found'}), 404
         
+        # If already marked as wallet paid, return immediately
+        if session.payment_hash == 'WALLET_PAID':
+            logger.info(f"Session {session_id} already marked as WALLET_PAID")
+            return jsonify({'paid': True})
+        
         # If already assigned to a node, it's already paid
         if session.node_id and session.node_id != 'pending':
             return jsonify({'paid': True})
         
         # Get session amount
         session_amount = session.amount or 0
+        
+        logger.info(f"check_payment: session {session_id}, amount={session_amount}, user.balance={user.balance if user else 'None'}")
         
         # Auto-pay from wallet if user has sufficient balance
         if user and user.balance >= session_amount and session_amount > 0:

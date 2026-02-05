@@ -1294,11 +1294,35 @@ function copyInvoice() {
         showError('No invoice to copy');
         return;
     }
-    navigator.clipboard.writeText(invoice).then(() => {
+    
+    // Try modern clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(invoice).then(() => {
+            showSuccess('Invoice copied to clipboard!');
+        }).catch(() => {
+            // Fallback to old method
+            fallbackCopy(invoice);
+        });
+    } else {
+        // Fallback for HTTP or older browsers
+        fallbackCopy(invoice);
+    }
+}
+
+function fallbackCopy(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+        document.execCommand('copy');
         showSuccess('Invoice copied to clipboard!');
-    }).catch(() => {
-        showError('Failed to copy');
-    });
+    } catch (err) {
+        showError('Failed to copy. Please select and copy manually.');
+    }
+    document.body.removeChild(textArea);
 }
 
 // ===========================================
