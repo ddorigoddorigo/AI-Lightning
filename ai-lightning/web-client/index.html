@@ -296,31 +296,11 @@
                 <h3>💳 Payment Required</h3>
                 <p class="invoice-amount">Amount: <span id="invoice-amount">-</span> sats</p>
                 
-                <!-- Wallet Payment Option -->
-                <div id="wallet-payment-option" style="display: none;">
-                    <div class="wallet-pay-box">
-                        <p>💰 Your balance: <strong id="payment-wallet-balance">0</strong> sats</p>
-                        <button onclick="payFromWallet()" class="btn-primary btn-large">⚡ Pay from Wallet</button>
-                        <p class="or-divider">— OR pay with Lightning —</p>
-                    </div>
+                <!-- Auto-payment notice -->
+                <div class="wallet-pay-box">
+                    <p>💰 Your balance: <strong id="payment-wallet-balance">0</strong> sats</p>
+                    <p class="payment-auto-check">⏳ Payment will be deducted automatically from your balance...</p>
                 </div>
-                
-                <!-- QR Code -->
-                <div id="qr-container">
-                    <div id="qr-code"></div>
-                </div>
-                
-                <!-- Invoice String -->
-                <div id="invoice-container">
-                    <pre id="invoice"></pre>
-                    <div class="invoice-buttons">
-                        <button onclick="copyInvoice()" class="btn-small">📋 Copy Invoice</button>
-                        <button onclick="openInWallet()" class="btn-small btn-lightning">⚡ Open in Wallet</button>
-                    </div>
-                </div>
-                
-                <p class="invoice-hint">Scan QR code with your Lightning wallet or click "Open in Wallet"</p>
-                <p class="payment-auto-check">⏳ Payment will be detected automatically...</p>
                 
                 <div class="payment-buttons">
                     <button onclick="cancelPayment()" class="btn-secondary">Cancel</button>

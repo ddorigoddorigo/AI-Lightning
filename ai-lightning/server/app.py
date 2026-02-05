@@ -617,6 +617,7 @@ def check_session_payment(session_id):
     """Check if Lightning payment for a session has been received."""
     try:
         user_id = get_jwt_identity()
+        user = User.query.get(int(user_id))
         
         session = Session.query.get(session_id)
         if not session or session.user_id != int(user_id):
@@ -626,17 +627,54 @@ def check_session_payment(session_id):
         if session.node_id and session.node_id != 'pending':
             return jsonify({'paid': True})
         
-        # In TEST_MODE, don't auto-confirm in polling - user must use "Pay with Wallet"
-        # or actually pay with Lightning. This allows testing the wallet flow.
-        if Config.DEBUG:
-            # In debug/test mode, always return False to force wallet usage
-            return jsonify({'paid': False})
+        # Get session amount
+        session_amount = session.amount or 0
         
-        # Verify Lightning payment (production only)
+        # Auto-pay from wallet if user has sufficient balance
+        if user and user.balance >= session_amount and session_amount > 0:
+            # Auto-pay from wallet
+            logger.info(f"Auto-paying session {session_id} from wallet: {session_amount} sats")
+            
+            # Calculate commission (10%)
+            commission = int(session_amount * 0.1)  # PLATFORM_COMMISSION_RATE
+            node_payment = session_amount - commission
+            
+            # Deduct from balance
+            user.balance -= session_amount
+            
+            # Record transaction
+            from models import Transaction, PlatformStats
+            tx = Transaction(
+                type='session_payment',
+                user_id=user.id,
+                amount=-session_amount,
+                fee=commission,
+                balance_after=user.balance,
+                status='completed',
+                description=f'Auto-payment for session {session_id} ({session.model})',
+                reference_id=str(session_id),
+                completed_at=datetime.utcnow()
+            )
+            db.session.add(tx)
+            
+            # Update platform stats
+            stats = PlatformStats.query.get(1)
+            if not stats:
+                stats = PlatformStats(id=1)
+                db.session.add(stats)
+            stats.total_commissions += commission
+            stats.total_volume += session_amount
+            
+            db.session.commit()
+            
+            logger.info(f"Session {session_id} auto-paid from wallet: {session_amount} sats")
+            return jsonify({'paid': True, 'auto_paid': True, 'new_balance': user.balance})
+        
+        # If no wallet balance, check Lightning payment
         payment_verified = get_lightning_manager().check_payment(session.payment_hash)
         
         if payment_verified:
-            logger.info(f"Payment verified for session {session_id}")
+            logger.info(f"Lightning payment verified for session {session_id}")
             return jsonify({'paid': True})
         
         return jsonify({'paid': False})
