@@ -167,16 +167,22 @@ class LightningManager:
             return True
         
         try:
-            # Try to determine if r_hash is hex or base64
-            try:
-                # If it's valid hex, convert to base64
+            # Determine format and convert to url-safe base64 for LND API
+            # LND API expects url-safe base64 without padding
+            
+            # Check if it looks like hex (only 0-9, a-f characters)
+            is_hex = all(c in '0123456789abcdefABCDEF' for c in r_hash)
+            
+            if is_hex and len(r_hash) == 64:
+                # It's hex (32 bytes = 64 hex chars), convert to base64
                 r_hash_bytes = bytes.fromhex(r_hash)
                 r_hash_b64 = base64.urlsafe_b64encode(r_hash_bytes).decode('utf-8').rstrip('=')
-            except ValueError:
-                # It might already be base64 - use as-is or try to decode
-                # Remove any padding and use directly
-                r_hash_b64 = r_hash.rstrip('=')
+            else:
+                # Assume it's already base64 - convert to url-safe and remove padding
+                # Replace standard base64 chars with url-safe ones
+                r_hash_b64 = r_hash.replace('+', '-').replace('/', '_').rstrip('=')
             
+            logger.debug(f"Checking payment with r_hash_b64: {r_hash_b64[:20]}...")
             response = self._request('GET', f'/v1/invoice/{r_hash_b64}')
             
             # State: OPEN=0, SETTLED=1, CANCELED=2, ACCEPTED=3
