@@ -1381,7 +1381,16 @@ function startPaymentPolling() {
                     // Payment received!
                     console.log('Payment confirmed! Starting session...');
                     stopPaymentPolling();
-                    showSuccess('Payment received!');
+                    
+                    // Update balance if auto-paid from wallet
+                    if (data.auto_paid && data.new_balance !== undefined) {
+                        userBalance = data.new_balance;
+                        updateBalanceDisplay(data.new_balance);
+                        showSuccess(`Payment of ${currentInvoiceAmount} sats deducted from wallet!`);
+                    } else {
+                        showSuccess('Payment received!');
+                    }
+                    
                     startSessionAfterPayment();
                 }
             } else {

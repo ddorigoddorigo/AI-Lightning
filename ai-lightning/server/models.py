@@ -162,8 +162,8 @@ class Transaction(db.Model):
             'balance_after': self.balance_after or 0,
             'status': self.status or 'completed',
             'description': self.description or '',
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+            'created_at': (self.created_at.isoformat() + 'Z') if self.created_at else None,
+            'completed_at': (self.completed_at.isoformat() + 'Z') if self.completed_at else None
         }
 
 

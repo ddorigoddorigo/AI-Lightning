@@ -222,7 +222,7 @@ def get_user_profile():
         'balance_btc': user.balance / 100_000_000,
         'is_admin': user.is_admin,
         'active_sessions': active_sessions,
-        'created_at': user.created_at.isoformat() if user.created_at else None
+        'created_at': (user.created_at.isoformat() + 'Z') if user.created_at else None
     })
 
 
@@ -330,7 +330,7 @@ def create_deposit_invoice():
             'invoice': invoice['payment_request'],
             'payment_hash': invoice['r_hash'],
             'amount': amount,
-            'expires_at': deposit.expires_at.isoformat()
+            'expires_at': deposit.expires_at.isoformat() + 'Z'
         })
         
     except Exception as e:
@@ -798,7 +798,7 @@ def get_admin_users():
                 'username': u.username,
                 'balance': u.balance,
                 'is_admin': u.is_admin,
-                'created_at': u.created_at.isoformat() if u.created_at else None,
+                'created_at': (u.created_at.isoformat() + 'Z') if u.created_at else None,
                 'sessions_count': Session.query.filter_by(user_id=u.id).count()
             } for u in users.items],
             'total': users.total,
@@ -929,7 +929,7 @@ def get_busy_nodes_info():
     for session in active_sessions:
         seconds_remaining = int((session.expires_at - now).total_seconds())
         busy_info[session.node_id] = {
-            'expires_at': session.expires_at.isoformat(),
+            'expires_at': session.expires_at.isoformat() + 'Z',
             'seconds_remaining': max(0, seconds_remaining),
             'model': session.model
         }
@@ -1048,7 +1048,7 @@ def get_available_models():
         'total_nodes_online': len(connected_nodes),
         'available_nodes': available_nodes_count,
         'busy_nodes': len(busy_node_ids),
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.utcnow().isoformat() + 'Z'
     })
 
 
@@ -1120,7 +1120,7 @@ def get_online_nodes():
         'count': len(nodes),
         'available': len(nodes) - len(busy_node_ids),
         'busy': len(busy_node_ids),
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.utcnow().isoformat() + 'Z'
     })
 
 # Session routes
@@ -1272,7 +1272,7 @@ def new_session():
             'invoice': invoice['payment_request'],
             'session_id': session.id,
             'amount': invoice['amount'],
-            'expires_at': session.expires_at.isoformat()
+            'expires_at': session.expires_at.isoformat() + 'Z'
         })
         
     except Exception as e:
@@ -1545,7 +1545,7 @@ def start_session(data):
             emit('session_started', {
                 'session_id': session.id,
                 'node_id': ws_node_id,
-                'expires_at': session.expires_at.isoformat()
+                'expires_at': session.expires_at.isoformat() + 'Z'
             })
             
             logger.info(f"Session {session.id} started on WebSocket node {ws_node_id}")
@@ -1592,7 +1592,7 @@ def start_session(data):
         emit('session_started', {
             'session_id': session.id,
             'node_id': node_id_str,
-            'expires_at': session.expires_at.isoformat()
+            'expires_at': session.expires_at.isoformat() + 'Z'
         })
 
     except Exception as e:
@@ -2376,7 +2376,7 @@ def handle_node_heartbeat(data):
     if node_id and node_id in connected_nodes:
         nm = get_node_manager()
         nm.redis.hset(f"node:{node_id}", 'last_ping', datetime.utcnow().timestamp())
-        emit('heartbeat_ack', {'timestamp': datetime.utcnow().isoformat()})
+        emit('heartbeat_ack', {'timestamp': datetime.utcnow().isoformat() + 'Z'})
 
 
 def get_websocket_node(model_query):
