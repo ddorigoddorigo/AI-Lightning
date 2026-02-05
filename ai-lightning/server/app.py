@@ -624,7 +624,7 @@ def check_session_payment(session_id):
             return jsonify({'error': 'Session not found'}), 404
         
         # If already marked as wallet paid, return immediately
-        if session.payment_hash == 'WALLET_PAID':
+        if session.payment_hash and session.payment_hash.startswith('WALLET_PAID'):
             logger.info(f"Session {session_id} already marked as WALLET_PAID")
             return jsonify({'paid': True})
         
@@ -672,8 +672,8 @@ def check_session_payment(session_id):
             stats.total_commissions += commission
             stats.total_volume += session_amount
             
-            # Mark session as paid from wallet (so start_session knows)
-            session.payment_hash = 'WALLET_PAID'
+            # Mark session as paid from wallet (use unique value to avoid constraint violation)
+            session.payment_hash = f'WALLET_PAID_{session_id}'
             
             db.session.commit()
             
@@ -1403,7 +1403,7 @@ def start_session(data):
         return
 
     # Check payment: wallet auto-pay, DEBUG mode, or Lightning payment
-    if session.payment_hash == 'WALLET_PAID':
+    if session.payment_hash and session.payment_hash.startswith('WALLET_PAID'):
         payment_verified = True
         logger.info(f"Session {session.id} was paid from wallet")
     elif Config.DEBUG:
