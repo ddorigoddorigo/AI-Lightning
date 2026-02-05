@@ -1289,24 +1289,21 @@ function openInWallet() {
 
 function copyInvoice() {
     // Use hidden field or global variable
-    const invoice = document.getElementById('invoice-text')?.value || currentInvoice;
+    const invoiceEl = document.getElementById('invoice-text');
+    const invoice = invoiceEl?.value || currentInvoice;
+    
+    console.log('copyInvoice called, invoice-text element:', invoiceEl);
+    console.log('copyInvoice invoice-text value:', invoiceEl?.value);
+    console.log('copyInvoice currentInvoice:', currentInvoice);
+    console.log('copyInvoice final invoice:', invoice);
+    
     if (!invoice) {
         showError('No invoice to copy');
         return;
     }
     
-    // Try modern clipboard API first
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(invoice).then(() => {
-            showSuccess('Invoice copied to clipboard!');
-        }).catch(() => {
-            // Fallback to old method
-            fallbackCopy(invoice);
-        });
-    } else {
-        // Fallback for HTTP or older browsers
-        fallbackCopy(invoice);
-    }
+    // Always use fallback for better compatibility
+    fallbackCopy(invoice);
 }
 
 function fallbackCopy(text) {
@@ -1314,12 +1311,19 @@ function fallbackCopy(text) {
     textArea.value = text;
     textArea.style.position = 'fixed';
     textArea.style.left = '-9999px';
+    textArea.style.top = '0';
     document.body.appendChild(textArea);
+    textArea.focus();
     textArea.select();
     try {
-        document.execCommand('copy');
-        showSuccess('Invoice copied to clipboard!');
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showSuccess('Invoice copied to clipboard!');
+        } else {
+            showError('Copy failed. Please copy manually.');
+        }
     } catch (err) {
+        console.error('Copy error:', err);
         showError('Failed to copy. Please select and copy manually.');
     }
     document.body.removeChild(textArea);
@@ -1389,8 +1393,15 @@ function startPaymentPolling() {
             return;
         }
         
+        if (!authToken) {
+            console.error('No authToken available, stopping polling');
+            stopPaymentPolling();
+            showError('Authentication error. Please login again.');
+            return;
+        }
+        
         try {
-            console.log('Polling payment status for session:', currentSession);
+            console.log('Polling payment status for session:', currentSession, 'with token:', authToken?.substring(0, 20) + '...');
             const response = await fetch(`/api/session/${currentSession}/check_payment`, {
                 headers: { 'Authorization': `Bearer ${authToken}` }
             });
