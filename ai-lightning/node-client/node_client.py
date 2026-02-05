@@ -685,6 +685,8 @@ class NodeClient:
         self.node_token = self.config.get('Node', 'token', fallback='')
         self.node_name = self.config.get('Node', 'name', fallback='')
         self.price_per_minute = self.config.getint('Node', 'price_per_minute', fallback=100)
+        # Restricted mode: only allow models configured on this node, no HuggingFace on-demand
+        self.restricted_models = self.config.getboolean('Node', 'restricted_models', fallback=False)
         
         # Lightning wallet per ricevere pagamenti
         self.lightning = NodeLightning(self.config)
@@ -742,6 +744,7 @@ class NodeClient:
                 'name': self.node_name,
                 'models': self.models if self.models else list(self.models_config.keys()),
                 'price_per_minute': self.price_per_minute,
+                'restricted_models': self.restricted_models,  # Only allow configured models
             }
             
             # Aggiungi autenticazione utente se disponibile

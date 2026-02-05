@@ -3,6 +3,11 @@ token =
 ; Display name for the node (optional)
 name = 
 
+; Restricted mode: if true, only models configured on this node can be used
+; Users cannot request HuggingFace models on-demand
+; The node will show as "Restricted" in the selection UI
+restricted_models = false
+
 ; === LIGHTNING WALLET (to receive direct payments) ===
 ; Configure your Lightning wallet to receive earnings directly
 ; Supported options:

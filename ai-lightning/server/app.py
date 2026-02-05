@@ -1116,6 +1116,7 @@ def get_online_nodes():
             'models_count': len(models),
             'status': 'busy' if is_busy else 'available',
             'price_per_minute': info.get('price_per_minute', 100),  # Price in satoshi/minute
+            'restricted_models': info.get('restricted_models', False),  # Only configured models allowed
             'hardware': {
                 'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
                 'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
@@ -1191,8 +1192,13 @@ def new_session():
                 # Get node price
                 node_price = info.get('price_per_minute', 100)
                 
-                # If it's a custom HuggingFace model, always accept (will be downloaded)
+                # Check if node is restricted (no HuggingFace on-demand)
+                is_restricted = info.get('restricted_models', False)
+                
+                # If it's a custom HuggingFace model, check if node allows it
                 if hf_repo:
+                    if is_restricted:
+                        return jsonify({'error': 'This node is restricted and does not allow custom HuggingFace models'}), 403
                     node_with_model = requested_node_id
                     model_price = node_price  # Use node price
                 else:
@@ -2149,6 +2155,7 @@ def handle_node_register(data):
     price_per_minute = data.get('price_per_minute', 100)  # Default 100 sats/min
     auth_token = data.get('auth_token')  # User's JWT token
     user_id = data.get('user_id')  # Owner user ID
+    restricted_models = data.get('restricted_models', False)  # Only allow configured models
     
     # Verify user authentication if provided
     owner_user_id = None
@@ -2189,6 +2196,7 @@ def handle_node_register(data):
             'models': json.dumps(models) if models else '[]',
             'hardware': json.dumps(hardware) if hardware else '{}',
             'price_per_minute': price_per_minute,
+            'restricted_models': '1' if restricted_models else '0',
             'status': 'online',
             'type': 'websocket',
             'last_ping': datetime.utcnow().timestamp(),
@@ -2207,6 +2215,7 @@ def handle_node_register(data):
             'status': 'online',
             'last_ping': datetime.utcnow().timestamp(),
             'price_per_minute': price_per_minute,
+            'restricted_models': '1' if restricted_models else '0',
         }
         # Update owner if authenticated
         if owner_user_id:
@@ -2226,7 +2235,8 @@ def handle_node_register(data):
         'hardware': hardware,
         'name': node_name or node_id,
         'price_per_minute': price_per_minute,
-        'owner_user_id': owner_user_id  # Owner user ID
+        'owner_user_id': owner_user_id,  # Owner user ID
+        'restricted_models': restricted_models  # Only configured models allowed
     }
     
     join_room(f"node_{node_id}")

@@ -530,7 +530,11 @@ function renderNodesGrid(nodes) {
     nodes.forEach(node => {
         const card = document.createElement('div');
         const isBusy = node.status === 'busy';
-        card.className = `node-card ${isBusy ? 'node-busy' : ''}`;
+        const isRestricted = node.restricted_models === true;
+        card.className = `node-card ${isBusy ? 'node-busy' : ''} ${isRestricted ? 'node-restricted' : ''}`;
+        
+        // Store restricted status on node for later use
+        node.isRestricted = isRestricted;
         
         if (!isBusy) {
             card.onclick = () => selectNode(node);
@@ -565,10 +569,16 @@ function renderNodesGrid(nodes) {
             `;
         }
         
+        // Restricted badge
+        const restrictedBadge = isRestricted 
+            ? '<span class="node-restricted-badge" title="Only pre-configured models allowed">🔒 Restricted</span>' 
+            : '';
+        
         card.innerHTML = `
             <div class="node-header">
                 <span class="node-name">🖥️ ${node.name || node.node_id.substring(0, 8)}</span>
                 <span class="node-status ${node.status}">${node.status}</span>
+                ${restrictedBadge}
             </div>
             
             <div class="node-price">
@@ -638,6 +648,39 @@ function selectNode(node) {
     document.getElementById('nodes-section').style.display = 'none';
     document.getElementById('models-section').style.display = 'block';
     document.getElementById('selected-node-name').textContent = node.name || node.node_id.substring(0, 8);
+    
+    // Handle restricted nodes - disable HuggingFace input
+    const hfInput = document.getElementById('hf-repo-input');
+    const hfButton = document.querySelector('.hf-load-btn');
+    const hfSection = document.querySelector('.huggingface-input');
+    
+    if (node.restricted_models || node.isRestricted) {
+        // Disable HuggingFace input for restricted nodes
+        if (hfInput) {
+            hfInput.disabled = true;
+            hfInput.placeholder = '🔒 Custom models not allowed on this node';
+        }
+        if (hfButton) {
+            hfButton.disabled = true;
+            hfButton.title = 'This node only allows pre-configured models';
+        }
+        if (hfSection) {
+            hfSection.classList.add('disabled');
+        }
+    } else {
+        // Enable HuggingFace input for non-restricted nodes
+        if (hfInput) {
+            hfInput.disabled = false;
+            hfInput.placeholder = 'bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M';
+        }
+        if (hfButton) {
+            hfButton.disabled = false;
+            hfButton.title = '';
+        }
+        if (hfSection) {
+            hfSection.classList.remove('disabled');
+        }
+    }
     
     // Render selected node's models
     renderNodeModels(node.models || []);
@@ -730,6 +773,12 @@ function renderNodeModels(models) {
 }
 
 function loadHuggingFaceModel() {
+    // Check if node is restricted
+    if (selectedNode && (selectedNode.restricted_models || selectedNode.isRestricted)) {
+        showError('This node is restricted and does not allow custom HuggingFace models');
+        return;
+    }
+    
     const input = document.getElementById('hf-repo-input');
     const hfRepo = input.value.trim();
     
