@@ -665,6 +665,9 @@ def check_session_payment(session_id):
             stats.total_commissions += commission
             stats.total_volume += session_amount
             
+            # Mark session as paid from wallet (so start_session knows)
+            session.payment_hash = 'WALLET_PAID'
+            
             db.session.commit()
             
             logger.info(f"Session {session_id} auto-paid from wallet: {session_amount} sats")
@@ -1392,8 +1395,15 @@ def start_session(data):
         emit('error', {'message': 'Session already started'})
         return
 
-    # In DEBUG mode, skip payment check for testing
-    payment_verified = Config.DEBUG or get_lightning_manager().check_payment(session.payment_hash)
+    # Check payment: wallet auto-pay, DEBUG mode, or Lightning payment
+    if session.payment_hash == 'WALLET_PAID':
+        payment_verified = True
+        logger.info(f"Session {session.id} was paid from wallet")
+    elif Config.DEBUG:
+        payment_verified = True
+    else:
+        payment_verified = get_lightning_manager().check_payment(session.payment_hash)
+    
     if not payment_verified:
         logger.warning("start_session: Payment not received")
         emit('error', {'message': 'Payment not received'})
