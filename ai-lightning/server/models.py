@@ -15,11 +15,16 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=True)  # Optional email
+    email = db.Column(db.String(120), unique=True, nullable=False)  # Required email
     password_hash = db.Column(db.String(256), nullable=False)  # Increased for scrypt hash
     balance = db.Column(db.Integer, default=0)  # Balance in satoshis
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
+    
+    # Email verification
+    email_verified = db.Column(db.Boolean, default=False)
+    verification_token = db.Column(db.String(100), nullable=True)
+    verification_token_expires = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password):
         """Set the hashed password."""

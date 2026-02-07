@@ -149,6 +149,13 @@ header .tagline {
     color: var(--text-muted);
 }
 
+.auth-form .form-hint {
+    margin: 10px 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
 .auth-form a {
     color: var(--primary);
     text-decoration: none;
@@ -156,6 +163,34 @@ header .tagline {
 
 .auth-form a:hover {
     text-decoration: underline;
+}
+
+/* Email verification error message */
+.error-message {
+    background: var(--surface);
+    border: 1px solid var(--error);
+    border-radius: var(--border-radius);
+    padding: 15px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+.error-message p {
+    margin: 5px 0;
+    color: var(--text);
+}
+
+.error-message .btn-secondary {
+    background: var(--primary);
+    color: var(--background);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.error-message .btn-secondary:hover {
+    background: var(--primary-light);
 }
 
 /* ===========================================
@@ -273,6 +308,28 @@ button:disabled {
     background: #d32f2f;
 }
 
+.btn-stop {
+    background: var(--warning);
+    color: #1a1a2e;
+    border: none;
+    padding: 10px 20px;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.95em;
+    transition: all 0.3s;
+    margin-left: 10px;
+}
+
+.btn-stop:hover {
+    background: #ff7b00;
+    transform: scale(1.05);
+}
+
+.btn-stop:active {
+    transform: scale(0.95);
+}
+
 .btn-refresh {
     background: var(--surface-light);
     margin-top: 15px;
@@ -383,6 +440,17 @@ button:disabled {
     background: rgba(156, 39, 176, 0.2);
     color: #9b59b6;
     margin-left: 8px;
+}
+
+/* Node version badge */
+.node-version-badge {
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 0.7em;
+    font-weight: bold;
+    background: rgba(0, 188, 212, 0.2);
+    color: #00bcd4;
+    margin-left: auto;
 }
 
 .node-card.node-restricted {
@@ -653,6 +721,35 @@ button:disabled {
     transform: none;
     border-color: var(--surface-light);
     box-shadow: none;
+}
+
+/* ===========================================
+   Model Card - Disabled (Restricted)
+   =========================================== */
+.model-card.model-disabled {
+    position: relative;
+    opacity: 0.5;
+    filter: grayscale(50%);
+    border: 2px dashed var(--surface-light);
+    cursor: not-allowed;
+}
+
+.model-card.model-disabled:hover {
+    transform: none;
+    border-color: var(--error);
+    box-shadow: none;
+}
+
+.model-restricted-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--error);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7em;
+    font-weight: 600;
 }
 
 .model-busy-overlay {
@@ -2406,6 +2503,132 @@ button:disabled {
 .pagination-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Admin Settings Section */
+.admin-settings-section {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.1), rgba(255, 100, 0, 0.05));
+    border: 1px solid var(--warning);
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 15px;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.setting-item label {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+.setting-value {
+    color: var(--text);
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.setting-input-group {
+    display: flex;
+    gap: 10px;
+}
+
+.setting-input-group input {
+    flex: 1;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--surface-light);
+    border-radius: var(--border-radius);
+    color: var(--text);
+}
+
+/* Admin Nodes Grid */
+.admin-nodes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 15px;
+}
+
+.admin-node-card {
+    background: var(--surface);
+    border: 1px solid var(--surface-light);
+    border-radius: var(--border-radius);
+    padding: 15px;
+    transition: border-color 0.2s;
+}
+
+.admin-node-card.node-outdated {
+    border-color: var(--error);
+    background: rgba(255, 82, 82, 0.1);
+}
+
+.node-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.node-name {
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75em;
+}
+
+.badge-busy {
+    background: rgba(255, 82, 82, 0.2);
+    color: var(--error);
+}
+
+.badge-free {
+    background: rgba(0, 230, 118, 0.2);
+    color: var(--success);
+}
+
+.node-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.node-detail {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9em;
+}
+
+.node-detail .label {
+    color: var(--text-muted);
+}
+
+.version-ok {
+    color: var(--success);
+}
+
+.version-outdated {
+    color: var(--error);
+    font-weight: bold;
+}
+
+.node-id {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--surface-light);
+    font-size: 0.75em;
+    color: var(--text-muted);
+    font-family: monospace;
+    word-break: break-all;
 }
 
 /* ===========================================

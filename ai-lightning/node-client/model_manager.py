@@ -356,15 +356,21 @@ class ModelManager:
     
     def load_config(self):
         """Load saved model configuration."""
+        print(f"[DEBUG ModelManager] Looking for config at: {self.config_file}")
+        print(f"[DEBUG ModelManager] Config exists: {os.path.exists(self.config_file)}")
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
                     data = json.load(f)
                     for model_id, model_data in data.get('models', {}).items():
                         self.models[model_id] = ModelInfo(**model_data)
+                print(f"[DEBUG ModelManager] Loaded {len(self.models)} models from config")
                 logger.info(f"Loaded {len(self.models)} models from config")
             except Exception as e:
+                print(f"[DEBUG ModelManager] Error loading config: {e}")
                 logger.error(f"Error loading config: {e}")
+        else:
+            print(f"[DEBUG ModelManager] Config file not found")
     
     def save_config(self):
         """Save model configuration."""

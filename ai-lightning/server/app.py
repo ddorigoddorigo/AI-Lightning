@@ -4,7 +4,7 @@ Main Flask Application.
 Handles authentication, API, WebSocket and business logic.
 """
 from functools import wraps
-from flask import Flask, render_template, request, jsonify, current_app
+from flask import Flask, render_template, request, jsonify, current_app, redirect
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_jwt_extended import (
     JWTManager, create_access_token, jwt_required, get_jwt_identity,
@@ -125,21 +125,34 @@ def get_version():
         'download_url': f'{base_url}/static/releases/LightPhon-Node-{NODE_CLIENT_VERSION}.exe',
         'checksum': None,  # SHA256 checksum (optional, set after build)
         'release_date': '2026-02-04',
-        'min_version': '0.9.0'  # Minimum version required (for forced updates)
+        'min_version': Config.MIN_NODE_VERSION  # Minimum version required (for forced updates)
     })
 
 # Auth routes
 @app.route('/api/register', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)  # 5 registrations/minute per IP
-@validate_json('username', 'password')
+@validate_json('username', 'password', 'email')
 def register():
-    """User registration."""
+    """User registration with email verification."""
+    import secrets
+    from utils.email_service import send_verification_email
+    
     data = request.get_json()
     
     # Input validation
     username = data['username'].strip()
     password = data['password']
-    email = data.get('email', '').strip() or None  # Optional email
+    email = data.get('email', '').strip()
+    
+    # Email is required
+    if not email:
+        return jsonify({'error': 'Email is required'}), 400
+    
+    # Validate email format
+    import re
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_regex, email):
+        return jsonify({'error': 'Invalid email format'}), 400
     
     if len(username) < 3 or len(username) > 80:
         return jsonify({'error': 'Username must be 3-80 characters'}), 400
@@ -153,16 +166,153 @@ def register():
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username already taken'}), 400
     
-    # Verify email if provided
-    if email and User.query.filter_by(email=email).first():
+    if User.query.filter_by(email=email).first():
         return jsonify({'error': 'Email already registered'}), 400
 
-    user = User(username=username, email=email)
+    # Generate verification token
+    verification_token = secrets.token_urlsafe(32)
+    token_expires = datetime.utcnow() + timedelta(hours=24)
+
+    # Auto-assign admin status if email is in admin list
+    is_admin = False
+    if email.lower().strip() in [e.lower().strip() for e in Config.ADMIN_EMAILS]:
+        is_admin = True
+        logger.info(f"Auto-assigning admin status to user with email: {email}")
+
+    user = User(
+        username=username, 
+        email=email, 
+        is_admin=is_admin,
+        email_verified=False,
+        verification_token=verification_token,
+        verification_token_expires=token_expires
+    )
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
+    
+    # Send verification email
+    base_url = request.host_url.rstrip('/')
+    verification_link = f"{base_url}/verify-email?token={verification_token}"
+    
+    email_sent = send_verification_email(
+        to_email=email,
+        username=username,
+        verification_link=verification_link
+    )
+    
+    if email_sent:
+        return jsonify({
+            'message': 'Registration successful! Please check your email to verify your account.',
+            'email_sent': True
+        }), 201
+    else:
+        return jsonify({
+            'message': 'Registration successful, but failed to send verification email. Please contact support.',
+            'email_sent': False
+        }), 201
 
-    return jsonify({'message': 'Registered successfully'}), 201
+
+@app.route('/api/verify-email', methods=['GET'])
+def verify_email_api():
+    """Verify email via token (API endpoint)."""
+    token = request.args.get('token')
+    
+    if not token:
+        return jsonify({'error': 'Verification token required'}), 400
+    
+    user = User.query.filter_by(verification_token=token).first()
+    
+    if not user:
+        return jsonify({'error': 'Invalid or expired verification token'}), 400
+    
+    if user.verification_token_expires and user.verification_token_expires < datetime.utcnow():
+        return jsonify({'error': 'Verification token has expired. Please register again.'}), 400
+    
+    # Verify the email
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires = None
+    db.session.commit()
+    
+    logger.info(f"Email verified for user: {user.username}")
+    
+    return jsonify({
+        'message': 'Email verified successfully! You can now login.',
+        'verified': True
+    })
+
+
+@app.route('/verify-email', methods=['GET'])
+def verify_email_page():
+    """Verify email via token (Web redirect)."""
+    token = request.args.get('token')
+    
+    if not token:
+        return render_template('index.html')
+    
+    user = User.query.filter_by(verification_token=token).first()
+    
+    if not user:
+        # Redirect to home with error
+        return redirect('/?verification=invalid')
+    
+    if user.verification_token_expires and user.verification_token_expires < datetime.utcnow():
+        return redirect('/?verification=expired')
+    
+    # Verify the email
+    user.email_verified = True
+    user.verification_token = None
+    user.verification_token_expires = None
+    db.session.commit()
+    
+    logger.info(f"Email verified for user: {user.username}")
+    
+    # Redirect to home with success
+    return redirect('/?verification=success')
+
+
+@app.route('/api/resend-verification', methods=['POST'])
+@validate_json('email')
+def resend_verification():
+    """Resend verification email."""
+    import secrets
+    from utils.email_service import send_verification_email
+    
+    data = request.get_json()
+    email = data.get('email', '').strip()
+    
+    user = User.query.filter_by(email=email).first()
+    
+    if not user:
+        return jsonify({'error': 'Email not found'}), 404
+    
+    if user.email_verified:
+        return jsonify({'error': 'Email already verified'}), 400
+    
+    # Generate new token
+    verification_token = secrets.token_urlsafe(32)
+    token_expires = datetime.utcnow() + timedelta(hours=24)
+    
+    user.verification_token = verification_token
+    user.verification_token_expires = token_expires
+    db.session.commit()
+    
+    # Send verification email
+    base_url = request.host_url.rstrip('/')
+    verification_link = f"{base_url}/verify-email?token={verification_token}"
+    
+    email_sent = send_verification_email(
+        to_email=email,
+        username=user.username,
+        verification_link=verification_link
+    )
+    
+    if email_sent:
+        return jsonify({'message': 'Verification email sent successfully'})
+    else:
+        return jsonify({'error': 'Failed to send verification email'}), 500
+
 
 @app.route('/api/login', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=60)  # 10 logins/minute per IP
@@ -173,6 +323,14 @@ def login():
     user = User.query.filter_by(username=data['username'].strip()).first()
     if not user or not user.check_password(data['password']):
         return jsonify({'error': 'Invalid credentials'}), 401
+    
+    # Check if email is verified
+    if not user.email_verified:
+        return jsonify({
+            'error': 'Email not verified. Please check your email and click the verification link.',
+            'email_not_verified': True,
+            'email': user.email
+        }), 403
 
     access_token = create_access_token(identity=str(user.id))
     logger.info(f"User {user.username} logged in, token created for id={user.id}")
@@ -921,6 +1079,132 @@ def get_admin_commissions():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/admin/settings', methods=['GET'])
+@jwt_required()
+def get_admin_settings():
+    """Get server settings (admin only)."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        return jsonify({
+            'node_client_version': NODE_CLIENT_VERSION,
+            'min_node_version': Config.MIN_NODE_VERSION,
+            'admin_emails': Config.ADMIN_EMAILS,
+            'platform_commission_rate': PLATFORM_COMMISSION_RATE,
+            'disk_critical_percent': Config.DISK_CRITICAL_PERCENT,
+            'test_mode': Config.TEST_MODE
+        })
+    except Exception as e:
+        logger.error(f"Error getting admin settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/settings', methods=['POST'])
+@jwt_required()
+def update_admin_settings():
+    """Update server settings (admin only). Note: Some settings require server restart."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        data = request.get_json() or {}
+        updated = []
+        
+        # Update MIN_NODE_VERSION in memory (persists until restart)
+        if 'min_node_version' in data:
+            Config.MIN_NODE_VERSION = data['min_node_version']
+            updated.append('min_node_version')
+            logger.info(f"Admin updated MIN_NODE_VERSION to {data['min_node_version']}")
+        
+        return jsonify({
+            'success': True,
+            'updated': updated,
+            'message': 'Settings updated successfully. Some changes may require a server restart.'
+        })
+    except Exception as e:
+        logger.error(f"Error updating admin settings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/nodes', methods=['GET'])
+@jwt_required()
+def get_admin_nodes():
+    """Get detailed node list with versions (admin only)."""
+    user_id = get_jwt_identity()
+    user = User.query.get(int(user_id))
+    
+    if not user or not user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    try:
+        nodes_list = []
+        busy_nodes = get_busy_nodes_info()
+        
+        for node_id, node_info in connected_nodes.items():
+            # Check if version is outdated
+            version = node_info.get('version', 'unknown')
+            is_outdated = False
+            if version != 'unknown':
+                try:
+                    def parse_version(version_str):
+                        try:
+                            parts = version_str.split('.')
+                            return tuple(int(p) for p in parts)
+                        except:
+                            return (0, 0, 0)
+                    is_outdated = parse_version(version) < parse_version(Config.MIN_NODE_VERSION)
+                except:
+                    pass
+            
+            # Get owner username
+            owner_username = None
+            owner_id = node_info.get('owner_user_id')
+            if owner_id:
+                owner = User.query.get(int(owner_id))
+                if owner:
+                    owner_username = owner.username
+            
+            # Get hardware info
+            hardware = node_info.get('hardware', {})
+            total_vram = hardware.get('total_vram_mb', 0)
+            gpu_count = len(hardware.get('gpus', [])) if hardware else 0
+            
+            # Check if busy
+            is_busy = node_id in busy_nodes
+            busy_info = busy_nodes.get(node_id, {})
+            
+            nodes_list.append({
+                'node_id': node_id,
+                'name': node_info.get('name', node_id),
+                'version': version,
+                'is_outdated': is_outdated,
+                'owner_user_id': owner_id,
+                'owner_username': owner_username,
+                'price_per_minute': node_info.get('price_per_minute', 100),
+                'models_count': len(node_info.get('models', [])),
+                'gpu_count': gpu_count,
+                'total_vram_mb': total_vram,
+                'is_busy': is_busy,
+                'busy_info': busy_info if is_busy else None
+            })
+        
+        return jsonify({
+            'nodes': nodes_list,
+            'total_online': len(nodes_list),
+            'min_node_version': Config.MIN_NODE_VERSION
+        })
+    except Exception as e:
+        logger.error(f"Error getting admin nodes: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 def get_busy_node_ids():
     """
     Returns the set of node IDs that are currently in use (with active sessions).
@@ -974,6 +1258,7 @@ def get_available_models():
     """
     Returns aggregated list of all available models from online nodes.
     Includes both available models and those on busy nodes (with timer).
+    Respects restricted mode - only shows allowed models when enabled.
     Does not require authentication.
     """
     available_models = {}  # model_id -> model_info for available models
@@ -995,6 +1280,10 @@ def get_available_models():
         hardware = info.get('hardware', {})
         node_name = info.get('name', node_id)
         
+        # Check if node is in restricted mode
+        is_restricted = info.get('restricted_models', False)
+        allowed_models_list = info.get('allowed_models_list', [])
+        
         # Choose which dictionary to use
         target_map = busy_models if is_busy else available_models
         
@@ -1002,6 +1291,11 @@ def get_available_models():
             if isinstance(model, dict):
                 # New format with complete info
                 model_id = model.get('id', model.get('name', 'unknown'))
+                
+                # Skip model if restricted mode is enabled and model is not in allowed list
+                if is_restricted and allowed_models_list:
+                    if model_id not in allowed_models_list:
+                        continue  # Skip this model
                 
                 # For display name, use hf_repo or filename to show full GGUF name
                 display_name = model.get('hf_repo') or model.get('filename') or model.get('name', model_id)
@@ -1043,6 +1337,12 @@ def get_available_models():
             else:
                 # Old format - model name only
                 model_name = str(model)
+                
+                # Skip model if restricted mode is enabled and model is not in allowed list
+                if is_restricted and allowed_models_list:
+                    if model_name not in allowed_models_list:
+                        continue  # Skip this model
+                
                 if model_name not in target_map:
                     target_map[model_name] = {
                         'id': model_name,
@@ -1117,6 +1417,8 @@ def get_online_nodes():
             'status': 'busy' if is_busy else 'available',
             'price_per_minute': info.get('price_per_minute', 100),  # Price in satoshi/minute
             'restricted_models': info.get('restricted_models', False),  # Only configured models allowed
+            'allowed_models_list': info.get('allowed_models_list', []),  # Allowed model IDs when restricted
+            'version': info.get('version', 'unknown'),  # Node software version
             'hardware': {
                 'cpu': hardware.get('cpu', {}).get('name', 'Unknown'),
                 'cpu_cores': hardware.get('cpu', {}).get('cores_logical', 0),
@@ -1194,6 +1496,7 @@ def new_session():
                 
                 # Check if node is restricted (no HuggingFace on-demand)
                 is_restricted = info.get('restricted_models', False)
+                allowed_models_list = info.get('allowed_models_list', [])
                 
                 # If it's a custom HuggingFace model, check if node allows it
                 if hf_repo:
@@ -1213,6 +1516,10 @@ def new_session():
                             model_id = str(model)
                         
                         if model_id == model_requested:
+                            # If restricted, also check if model is in allowed list
+                            if is_restricted and allowed_models_list:
+                                if model_id not in allowed_models_list:
+                                    return jsonify({'error': 'This model is not allowed on this restricted node'}), 403
                             node_with_model = requested_node_id
                             model_price = node_price  # Use node price
                             break
@@ -1262,7 +1569,7 @@ def new_session():
         context_length = data.get('context_length', 4096)
         try:
             context_length = int(context_length)
-            context_length = max(512, min(context_length, 131072))  # Clamp between 512 and 128k
+            context_length = max(512, min(context_length, 128000))  # Clamp between 512 and 128k
         except (ValueError, TypeError):
             context_length = 4096
 
@@ -1638,6 +1945,41 @@ def start_session(data):
         current_app.logger.error(f"Failed to start session: {e}")
         emit('error', {'message': 'Failed to start session'})
 
+
+@socketio.on('stop_generation')
+def handle_stop_generation(data):
+    """Stop the current LLM generation without ending the session."""
+    user_id = get_socket_user_id()
+    if not user_id:
+        emit('error', {'message': 'Authentication required'})
+        return
+    
+    session_id = data.get('session_id')
+    if not session_id:
+        emit('error', {'message': 'Session ID required'})
+        return
+    
+    session = Session.query.get(session_id)
+    if not session or not session.active:
+        emit('error', {'message': 'Invalid session'})
+        return
+    
+    # Verify user owns this session
+    if session.user_id != int(user_id):
+        emit('error', {'message': 'Unauthorized'})
+        return
+    
+    # Forward stop request to node
+    if session.node_id in connected_nodes:
+        logger.info(f"Forwarding stop_generation to node {session.node_id} for session {session_id}")
+        socketio.emit('stop_generation', {
+            'session_id': session_id
+        }, room=f"node_{session.node_id}")
+        emit('generation_stopping', {'session_id': session_id})
+    else:
+        emit('error', {'message': 'Node not connected'})
+
+
 @socketio.on('chat_message')
 def handle_message(data):
     """Chat message handling."""
@@ -1660,7 +2002,7 @@ def handle_message(data):
             'prompt': data['prompt'],
             # Basic parameters
             'max_tokens': data.get('max_tokens', -1),
-            'temperature': data.get('temperature', 0.7),
+            'temperature': data.get('temperature', 0.05),
             'top_k': data.get('top_k', 40),
             'top_p': data.get('top_p', 0.95),
             'seed': data.get('seed', -1),
@@ -1711,7 +2053,7 @@ def handle_message(data):
             json={
                 'prompt': data['prompt'],
                 'max_tokens': data.get('max_tokens', 2048),
-                'temperature': data.get('temperature', 0.7),
+                'temperature': data.get('temperature', 0.05),
                 'top_k': data.get('top_k', 40),
                 'top_p': data.get('top_p', 0.95),
                 'repeat_penalty': data.get('repeat_penalty', 1.1),
@@ -2156,6 +2498,10 @@ def handle_node_register(data):
     auth_token = data.get('auth_token')  # User's JWT token
     user_id = data.get('user_id')  # Owner user ID
     restricted_models = data.get('restricted_models', False)  # Only allow configured models
+    allowed_models_list = data.get('allowed_models_list', [])  # List of allowed model IDs when restricted
+    node_version = data.get('version', 'unknown')  # Node software version
+    
+    logger.info(f"Node register: name={node_name}, restricted_models={restricted_models}, allowed_models_list={allowed_models_list}")
     
     # Verify user authentication if provided
     owner_user_id = None
@@ -2197,10 +2543,12 @@ def handle_node_register(data):
             'hardware': json.dumps(hardware) if hardware else '{}',
             'price_per_minute': price_per_minute,
             'restricted_models': '1' if restricted_models else '0',
+            'allowed_models_list': json.dumps(allowed_models_list) if allowed_models_list else '[]',
             'status': 'online',
             'type': 'websocket',
             'last_ping': datetime.utcnow().timestamp(),
-            'load': 0
+            'load': 0,
+            'version': node_version
         }
         # Save owner if authenticated
         if owner_user_id:
@@ -2216,6 +2564,8 @@ def handle_node_register(data):
             'last_ping': datetime.utcnow().timestamp(),
             'price_per_minute': price_per_minute,
             'restricted_models': '1' if restricted_models else '0',
+            'allowed_models_list': json.dumps(allowed_models_list) if allowed_models_list else '[]',
+            'version': node_version,
         }
         # Update owner if authenticated
         if owner_user_id:
@@ -2236,7 +2586,9 @@ def handle_node_register(data):
         'name': node_name or node_id,
         'price_per_minute': price_per_minute,
         'owner_user_id': owner_user_id,  # Owner user ID
-        'restricted_models': restricted_models  # Only configured models allowed
+        'restricted_models': restricted_models,  # Only configured models allowed
+        'allowed_models_list': allowed_models_list,  # List of allowed model IDs when restricted
+        'version': node_version  # Node software version
     }
     
     join_room(f"node_{node_id}")
@@ -2302,6 +2654,7 @@ def handle_disconnect():
         if info['sid'] == request.sid:
             node_name = info.get('name', node_id)
             owner_user_id = info.get('owner_user_id')
+            email_on_offline = info.get('email_on_offline', False)
             
             del connected_nodes[node_id]
             
@@ -2319,8 +2672,8 @@ def handle_disconnect():
             except Exception as e:
                 logger.error(f"Error processing refunds for node {node_id}: {e}")
             
-            # Send offline notification email to owner
-            if owner_user_id:
+            # Send offline notification email to owner (only if enabled)
+            if owner_user_id and email_on_offline:
                 try:
                     owner = User.query.get(owner_user_id)
                     if owner and owner.email:
@@ -2333,6 +2686,8 @@ def handle_disconnect():
                         logger.info(f"Offline alert email sent to {owner.email} for node {node_id}")
                 except Exception as e:
                     logger.error(f"Failed to send offline alert for node {node_id}: {e}")
+            elif owner_user_id and not email_on_offline:
+                logger.debug(f"Offline email notification disabled for node {node_id}")
             
             break
     
@@ -2565,6 +2920,57 @@ def handle_node_models_update(data):
     emit('models_updated', {'count': len(models)})
 
 
+@socketio.on('node_settings_update')
+def handle_node_settings_update(data):
+    """Node updates its settings (restricted mode, price, etc.)."""
+    node_id = data.get('node_id')
+    
+    if not node_id:
+        # Search node_id from socket id
+        for nid, info in connected_nodes.items():
+            if info['sid'] == request.sid:
+                node_id = nid
+                break
+    
+    if not node_id or node_id not in connected_nodes:
+        emit('error', {'message': 'Node not registered'})
+        return
+    
+    # Update settings in connected_nodes
+    if 'restricted_models' in data:
+        connected_nodes[node_id]['restricted_models'] = data['restricted_models']
+    if 'allowed_models_list' in data:
+        connected_nodes[node_id]['allowed_models_list'] = data['allowed_models_list']
+    if 'price_per_minute' in data:
+        connected_nodes[node_id]['price_per_minute'] = data['price_per_minute']
+    if 'name' in data:
+        connected_nodes[node_id]['name'] = data['name']
+    if 'hardware' in data:
+        connected_nodes[node_id]['hardware'] = data['hardware']
+    if 'email_on_offline' in data:
+        connected_nodes[node_id]['email_on_offline'] = data['email_on_offline']
+    
+    # Also update in Redis
+    nm = get_node_manager()
+    update_data = {
+        'last_ping': datetime.utcnow().timestamp(),
+        'restricted_models': '1' if data.get('restricted_models') else '0',
+        'allowed_models_list': json.dumps(data.get('allowed_models_list', [])),
+        'price_per_minute': data.get('price_per_minute', 100),
+        'email_on_offline': '1' if data.get('email_on_offline') else '0'
+    }
+    if 'name' in data:
+        update_data['name'] = data['name']
+    if 'hardware' in data:
+        update_data['hardware'] = json.dumps(data['hardware'])
+    
+    nm.redis.hset(f"node:{node_id}", mapping=update_data)
+    
+    logger.info(f"Node {node_id} updated settings: restricted={data.get('restricted_models')}, price={data.get('price_per_minute')}")
+    
+    emit('settings_updated', {'success': True})
+
+
 @socketio.on('node_heartbeat')
 def handle_node_heartbeat(data):
     """Heartbeat from node to keep connection active."""
@@ -2715,3 +3121,19 @@ def create_admin(username, password):
     db.session.add(user)
     db.session.commit()
     print(f'Admin user {username} created.')
+
+
+if __name__ == '__main__':
+    # Run the server with SocketIO support
+    # Use 0.0.0.0 to listen on all network interfaces
+    port = int(Config.PORT)
+    debug = Config.DEBUG
+    
+    print(f"Starting AI Lightning Server on 0.0.0.0:{port}")
+    print(f"Debug mode: {debug}")
+    
+    # Start cleanup scheduler
+    start_cleanup_scheduler()
+    
+    # Run with SocketIO (required for WebSocket support)
+    socketio.run(app, host='0.0.0.0', port=port, debug=debug, allow_unsafe_werkzeug=True)

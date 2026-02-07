@@ -43,8 +43,10 @@
             </div>
             <div id="register-form" class="auth-form" style="display: none;">
                 <h2>Register</h2>
-                <input type="text" id="reg-username" placeholder="Username" autocomplete="username">
-                <input type="password" id="reg-password" placeholder="Password (min 8 chars)" autocomplete="new-password">
+                <input type="text" id="reg-username" placeholder="Username" autocomplete="username" required>
+                <input type="email" id="reg-email" placeholder="Email" autocomplete="email" required>
+                <input type="password" id="reg-password" placeholder="Password (min 8 chars)" autocomplete="new-password" required>
+                <p class="form-hint">📧 A verification email will be sent to confirm your address.</p>
                 <button onclick="register()">Register</button>
                 <p>Have an account? <a href="#" onclick="showLoginForm()">Login</a></p>
             </div>
@@ -126,7 +128,7 @@
                 <div class="config-row context-row">
                     <label for="context-slider">Context Length:</label>
                     <div class="context-slider-container">
-                        <input type="range" id="context-slider" min="512" max="100000" step="512" value="4096">
+                        <input type="range" id="context-slider" min="512" max="128000" step="512" value="4096">
                         <span id="context-value" class="slider-value">4096</span>
                     </div>
                 </div>
@@ -152,7 +154,7 @@
                             <div class="params-grid">
                                 <div class="param-group">
                                     <label>Temperature</label>
-                                    <input type="range" id="param-temperature" min="0" max="2" step="0.05" value="0.7">
+                                    <input type="range" id="param-temperature" min="0" max="2" step="0.05" value="0.05">
                                     <span class="param-value" id="temp-value">0.7</span>
                                     <small>Randomness (0 = deterministic)</small>
                                 </div>
@@ -327,13 +329,14 @@
                 </div>
                 
                 <div class="chat-container" id="chat">
-                    <div class="message system">Session ready! Start chatting.</div>
+                    <div class="message system"><span style="font-size: 1.5em; color: white; font-weight: bold;">Wait! In some seconds you can now chat with the AI</span></div>
                 </div>
 
                 <div class="input-area">
                     <input type="text" id="prompt" placeholder="Type your message..." disabled
                            onkeypress="if(event.key=='Enter') sendMessage()">
                     <button id="send-btn" onclick="sendMessage()" disabled>Send</button>
+                    <button id="stop-btn" onclick="stopGeneration()" class="btn-stop" style="display: none;" title="Stop generation">⏹️ Stop</button>
                 </div>
             </div>
             </div><!-- End chat-tab -->
@@ -369,6 +372,32 @@
                 <div class="admin-container">
                     <h3>👑 Admin Dashboard</h3>
                     
+                    <!-- Server Settings Section -->
+                    <div class="admin-section admin-settings-section">
+                        <h4>⚙️ Server Settings</h4>
+                        <div class="settings-grid">
+                            <div class="setting-item">
+                                <label>Current Node Client Version:</label>
+                                <span id="admin-current-version" class="setting-value">-</span>
+                            </div>
+                            <div class="setting-item">
+                                <label>Minimum Node Version Required:</label>
+                                <div class="setting-input-group">
+                                    <input type="text" id="admin-min-version" placeholder="1.0.0" value="1.0.0">
+                                    <button onclick="updateMinNodeVersion()" class="btn-small">Update</button>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <label>Platform Commission:</label>
+                                <span id="admin-commission-rate" class="setting-value">-</span>
+                            </div>
+                            <div class="setting-item">
+                                <label>Test Mode:</label>
+                                <span id="admin-test-mode" class="setting-value">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="admin-stats">
                         <div class="stat-card">
                             <div class="stat-value" id="admin-commissions">0</div>
@@ -386,6 +415,12 @@
                             <div class="stat-value" id="admin-nodes">0</div>
                             <div class="stat-label">Online Nodes</div>
                         </div>
+                    </div>
+
+                    <!-- Online Nodes with Versions -->
+                    <div class="admin-section">
+                        <h4>🖥️ Online Nodes</h4>
+                        <div id="admin-nodes-list" class="admin-nodes-grid"></div>
                     </div>
 
                     <div class="admin-section">

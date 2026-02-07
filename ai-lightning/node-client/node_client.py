@@ -21,6 +21,7 @@ import urllib3
 from pathlib import Path
 from configparser import ConfigParser
 from flask import Flask, request, jsonify
+from version import VERSION
 
 # Disabilita warning SSL per certificati self-signed
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -151,7 +152,8 @@ class LlamaProcess:
                 '--host', '127.0.0.1',
                 '--port', str(self.port),
                 '--ctx-size', str(self.context),
-                '-ngl', str(self.gpu_layers)
+                '-b', '2048',
+                '-ub', '2048'
             ]
             
             # Aggiungi HF_TOKEN se presente nell'ambiente (per modelli gated)
@@ -182,7 +184,8 @@ class LlamaProcess:
                 '--host', '127.0.0.1',
                 '--port', str(self.port),
                 '--ctx-size', str(self.context),
-                '-ngl', str(self.gpu_layers)
+                '-b', '2048',
+                '-ub', '2048'
             ]
         
         logger.info(f"Starting llama-server: {' '.join(cmd)}")
@@ -250,9 +253,12 @@ class LlamaProcess:
                 
                 # Notify specific error
                 if download_callback:
-                    if 'error' in remaining_output.lower() or 'failed' in remaining_output.lower():
+                    output_lower = remaining_output.lower()
+                    if 'outofdevicememory' in output_lower or 'out of memory' in output_lower or 'failed to allocate' in output_lower:
+                        download_callback('error', f'Not enough VRAM to load this model. The model requires more GPU memory than available.')
+                    elif 'error' in output_lower or 'failed' in output_lower:
                         download_callback('error', f'Model loading failed: {remaining_output[:200]}')
-                    elif 'not found' in remaining_output.lower():
+                    elif 'not found' in output_lower:
                         download_callback('error', f'Model not found or invalid format')
                     else:
                         download_callback('error', f'llama-server crashed (code {exit_code})')
@@ -385,7 +391,7 @@ class LlamaProcess:
     def is_running(self):
         return self.process and self.process.poll() is None
     
-    def generate(self, prompt, max_tokens=2048, temperature=0.7, top_k=40, top_p=0.95, 
+    def generate(self, prompt, max_tokens=2048, temperature=0.05, top_k=40, top_p=0.95, 
                  repeat_penalty=1.0, presence_penalty=0.0, frequency_penalty=0.0, 
                  seed=-1, stop=None,
                  # Extended parameters
@@ -482,7 +488,7 @@ class LlamaProcess:
         except Exception as e:
             return None, str(e)
     
-    def generate_stream(self, prompt, max_tokens=2048, temperature=0.7, top_k=40, top_p=0.95,
+    def generate_stream(self, prompt, max_tokens=2048, temperature=0.05, top_k=40, top_p=0.95,
                         repeat_penalty=1.0, presence_penalty=0.0, frequency_penalty=0.0,
                         seed=-1, stop=None, token_callback=None,
                         # Extended parameters
@@ -573,6 +579,9 @@ class LlamaProcess:
             # Add samplers order if specified
             if samplers:
                 payload['samplers'] = samplers.split(';') if isinstance(samplers, str) else samplers
+            
+            logger.info(f"[LLAMA] Sending request to llama-server: temp={payload['temperature']}, top_k={payload['top_k']}, top_p={payload['top_p']}")
+            logger.info(f"[LLAMA] Full payload: {payload}")
             
             with httpx.stream(
                 'POST',
@@ -679,6 +688,7 @@ class NodeClient:
     
     def __init__(self, config_path='config.ini'):
         self.config = ConfigParser()
+        self.config_path = config_path  # Save path for later use
         self.config.read(config_path)
         
         self.server_url = self.config.get('Server', 'URL', fallback='http://localhost:5000')
@@ -687,6 +697,12 @@ class NodeClient:
         self.price_per_minute = self.config.getint('Node', 'price_per_minute', fallback=100)
         # Restricted mode: only allow models configured on this node, no HuggingFace on-demand
         self.restricted_models = self.config.getboolean('Node', 'restricted_models', fallback=False)
+        # Allowed models list for restricted mode (comma-separated model IDs)
+        allowed_str = self.config.get('Node', 'allowed_models_list', fallback='')
+        self.allowed_models_list = [m.strip() for m in allowed_str.split(',') if m.strip()]
+        
+        # Notification settings
+        self.email_on_offline = self.config.getboolean('Notifications', 'email_on_offline', fallback=False)
         
         # Lightning wallet per ricevere pagamenti
         self.lightning = NodeLightning(self.config)
@@ -745,6 +761,8 @@ class NodeClient:
                 'models': self.models if self.models else list(self.models_config.keys()),
                 'price_per_minute': self.price_per_minute,
                 'restricted_models': self.restricted_models,  # Only allow configured models
+                'allowed_models_list': self.allowed_models_list,  # List of allowed model IDs when restricted
+                'version': VERSION,  # Software version
             }
             
             # Aggiungi autenticazione utente se disponibile
@@ -992,6 +1010,39 @@ class NodeClient:
             
             self.sio.emit('session_stopped', {'session_id': session_id})
         
+        @self.sio.on('stop_generation')
+        def on_stop_generation(data):
+            """Richiesta di fermare la generazione in corso (senza terminare la sessione)"""
+            session_id = str(data['session_id'])
+            logger.info(f"[STOP_GENERATION] Received stop_generation request for session {session_id}")
+            
+            if session_id in self.active_sessions:
+                llama_process = self.active_sessions[session_id]
+                logger.info(f"[STOP_GENERATION] Stopping streaming for session {session_id}")
+                
+                # Solo ferma lo streaming, non il processo
+                llama_process.request_stop_streaming()
+                
+                logger.info(f"[STOP_GENERATION] Generation stopped for session {session_id}")
+                
+                # Notifica che la generazione è stata fermata
+                self.sio.emit('generation_stopped', {'session_id': session_id})
+            else:
+                logger.warning(f"[STOP_GENERATION] Session {session_id} not found in active sessions")
+        
+        @self.sio.on('settings_updated')
+        def on_settings_updated(data):
+            """Conferma che le impostazioni sono state aggiornate sul server"""
+            if data.get('success'):
+                logger.info("[SETTINGS] Settings successfully synced with server")
+                if self.status_callback:
+                    try:
+                        self.status_callback('settings_synced', data)
+                    except Exception as e:
+                        logger.error(f"Settings callback error: {e}")
+            else:
+                logger.warning(f"[SETTINGS] Failed to sync settings: {data.get('error', 'Unknown error')}")
+        
         @self.sio.on('inference_request')
         def on_inference(data):
             """Inference request with streaming"""
@@ -1000,7 +1051,7 @@ class NodeClient:
             
             # Basic parameters
             max_tokens = data.get('max_tokens', -1)  # -1 = use model context
-            temperature = data.get('temperature', 0.7)
+            temperature = data.get('temperature', 0.05)
             top_k = data.get('top_k', 40)
             top_p = data.get('top_p', 0.95)
             seed = data.get('seed', -1)
@@ -1033,6 +1084,8 @@ class NodeClient:
             samplers = data.get('samplers', None)
             
             logger.info(f"Inference request for session {session_id}: temp={temperature}, top_k={top_k}, top_p={top_p}, min_p={min_p}")
+            logger.info(f"Full LLM params: max_tokens={max_tokens}, repeat_penalty={repeat_penalty}, presence={presence_penalty}, frequency={frequency_penalty}")
+            logger.info(f"DRY params: mult={dry_multiplier}, base={dry_base}, XTC: thresh={xtc_threshold}, prob={xtc_probability}")
             
             if session_id not in self.active_sessions:
                 self.sio.emit('inference_error', {
@@ -1191,7 +1244,7 @@ class NodeClient:
     def _save_token(self, token):
         """Save token to config"""
         self.config.set('Node', 'token', token)
-        with open('config.ini', 'w') as f:
+        with open(self.config_path, 'w') as f:
             self.config.write(f)
     
     def _start_local_http_server(self, port=9000):
@@ -1296,6 +1349,35 @@ class NodeClient:
         
         self.sio.emit('node_models_update', sync_data)
         logger.info(f"Synced {len(models)} models with server")
+        return True
+    
+    def sync_settings(self):
+        """Sincronizza le impostazioni del nodo con il server"""
+        if not self.is_connected():
+            logger.warning("Cannot sync settings: not connected")
+            return False
+        
+        settings_data = {
+            'node_id': self.node_id,
+            'restricted_models': self.restricted_models,
+            'allowed_models_list': self.allowed_models_list,
+            'price_per_minute': self.price_per_minute,
+            'name': self.node_name,
+            'email_on_offline': self.email_on_offline
+        }
+        
+        if self.hardware_info:
+            settings_data['hardware'] = self.hardware_info
+        
+        logger.info(f"[SYNC] Sending settings to server:")
+        logger.info(f"[SYNC]   node_id: {self.node_id}")
+        logger.info(f"[SYNC]   restricted_models: {self.restricted_models}")
+        logger.info(f"[SYNC]   allowed_models_list: {self.allowed_models_list}")
+        logger.info(f"[SYNC]   price_per_minute: {self.price_per_minute}")
+        logger.info(f"[SYNC]   email_on_offline: {self.email_on_offline}")
+        
+        self.sio.emit('node_settings_update', settings_data)
+        logger.info(f"[SYNC] Settings emitted to server")
         return True
     
     def cleanup_all_sessions(self):

@@ -76,3 +76,9 @@ class Config:
     
     # Alert thresholds
     DISK_CRITICAL_PERCENT = int(os.environ.get('DISK_CRITICAL_PERCENT', 90))  # Send email when disk > 90%
+    
+    # Node version settings
+    MIN_NODE_VERSION = os.environ.get('MIN_NODE_VERSION', '1.0.0')  # Minimum node software version required
+    
+    # Admin emails (comma-separated)
+    ADMIN_EMAILS = os.environ.get('ADMIN_EMAILS', 'admin@lightphon.com').split(',')

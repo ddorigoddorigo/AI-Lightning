@@ -12,6 +12,14 @@ from tkinter import ttk, messagebox, filedialog, scrolledtext
 from pathlib import Path
 from configparser import ConfigParser
 from datetime import datetime
+import base64
+
+# Windows autostart
+try:
+    import winreg
+    HAS_WINREG = True
+except ImportError:
+    HAS_WINREG = False
 
 try:
     import requests
@@ -43,10 +51,13 @@ class NodeGUI:
         
         # Variables
         self.client = None
-        self.config_path = 'node_config.ini'
+        # Use absolute path for config file (same directory as script)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.config_path = os.path.join(script_dir, 'node_config.ini')
         self.config = ConfigParser()
         self.system_info = None
         self.model_manager = None
+        self.config_loaded = False  # Flag to prevent premature config saves
         
         # Auto-updater
         self.updater = AutoUpdater(callback=self._on_update_available)
@@ -62,12 +73,76 @@ class NodeGUI:
         
         self._create_ui()
         self._load_config()
+        self.config_loaded = True  # Now it's safe to save config
         
         # Detect hardware at startup
         self.root.after(100, self._detect_hardware)
         
         # Start auto-updater
         self.root.after(5000, self._start_updater)
+        
+        # Complete startup sequence after 1 second (models, settings, then connection)
+        self.root.after(1000, self._complete_startup_sequence)
+    
+    def _complete_startup_sequence(self):
+        """Complete the startup sequence in correct order"""
+        print("[STARTUP] Starting complete initialization sequence...")
+        
+        # Step 1: Load models folder and models
+        self._startup_load_models()
+        
+        # Step 2: Apply restricted mode settings (after 500ms)
+        self.root.after(500, self._startup_apply_restricted)
+        
+        # Step 3: Auto-login if configured (after 1000ms)
+        self.root.after(1000, self._startup_auto_login)
+    
+    def _startup_load_models(self):
+        """Step 1: Load models folder and models"""
+        print("[STARTUP] Step 1: Loading models...")
+        
+        folder = self.models_folder.get()
+        if folder and os.path.exists(folder):
+            print(f"[STARTUP] Models folder: {folder}")
+            
+            # Initialize model manager if not done
+            if not self.model_manager:
+                self._init_model_manager(folder, auto_load=False)
+            
+            # Load models from saved config or scan
+            if self.model_manager:
+                if self.model_manager.models:
+                    models = list(self.model_manager.models.values())
+                    self._update_models_list(models)
+                    self.log(f"✓ Loaded {len(models)} models from saved configuration")
+                    print(f"[STARTUP] Loaded {len(models)} models from config")
+                else:
+                    # No saved models, do a scan
+                    self.log("No saved models, scanning folder...")
+                    print("[STARTUP] No saved models, will scan...")
+                    self._scan_models()
+        else:
+            print(f"[STARTUP] No models folder configured or doesn't exist: {folder}")
+    
+    def _startup_apply_restricted(self):
+        """Step 2: Apply restricted mode settings"""
+        print("[STARTUP] Step 2: Applying restricted mode settings...")
+        
+        if hasattr(self, 'restricted_mode') and self.restricted_mode.get():
+            print(f"[STARTUP] Restricted mode is ON, allowed models: {self.allowed_models}")
+            self.log(f"Restricted mode enabled, {len(self.allowed_models)} allowed models")
+        else:
+            print("[STARTUP] Restricted mode is OFF")
+    
+    def _startup_auto_login(self):
+        """Step 3: Auto-login if configured"""
+        print("[STARTUP] Step 3: Checking auto-login...")
+        
+        if hasattr(self, 'auth_token') and self.auth_token:
+            print("[STARTUP] Auth token found, attempting auto-login...")
+            self._try_auto_login()
+        else:
+            print("[STARTUP] No auth token, manual login required")
     
     def _create_ui(self):
         """Create the interface"""
@@ -119,6 +194,10 @@ class NodeGUI:
         self.status_label = ttk.Label(status_frame, textvariable=self.status_var, relief=tk.SUNKEN, anchor='w')
         self.status_label.pack(fill=tk.X, side=tk.LEFT, expand=True)
         
+        # Settings button
+        self.settings_btn = ttk.Button(status_frame, text="⚙️", width=3, command=self.open_settings)
+        self.settings_btn.pack(side=tk.RIGHT, padx=2)
+        
         # Update check button
         self.update_btn = ttk.Button(status_frame, text="🔄", width=3, command=self.check_update_manual)
         self.update_btn.pack(side=tk.RIGHT, padx=2)
@@ -161,8 +240,22 @@ class NodeGUI:
         self.login_password = tk.StringVar()
         ttk.Entry(self.login_frame, textvariable=self.login_password, show='*', width=40).grid(row=1, column=1, padx=10, pady=5, sticky='ew')
         
+        # Options frame
+        options_frame = ttk.Frame(self.login_frame)
+        options_frame.grid(row=2, column=0, columnspan=2, pady=5)
+        
+        self.save_password = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="💾 Save Password", variable=self.save_password).pack(side=tk.LEFT, padx=10)
+        
+        self.auto_connect = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="🔌 Auto-Connect on Login", variable=self.auto_connect).pack(side=tk.LEFT, padx=10)
+        
+        self.autostart_windows = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="🚀 Start with Windows", variable=self.autostart_windows, 
+                       command=self._toggle_autostart).pack(side=tk.LEFT, padx=10)
+        
         btn_frame = ttk.Frame(self.login_frame)
-        btn_frame.grid(row=2, column=0, columnspan=2, pady=15)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=15)
         
         self.login_btn = ttk.Button(btn_frame, text="🔑 Login", command=self._do_login, width=15)
         self.login_btn.pack(side=tk.LEFT, padx=5)
@@ -170,7 +263,7 @@ class NodeGUI:
         ttk.Button(btn_frame, text="📝 Register", command=self._show_register, width=15).pack(side=tk.LEFT, padx=5)
         
         self.login_status = tk.StringVar(value="")
-        ttk.Label(self.login_frame, textvariable=self.login_status, foreground='red').grid(row=3, column=0, columnspan=2, pady=5)
+        ttk.Label(self.login_frame, textvariable=self.login_status, foreground='red').grid(row=4, column=0, columnspan=2, pady=5)
         
         self.login_frame.columnconfigure(1, weight=1)
         
@@ -263,14 +356,28 @@ class NodeGUI:
             self.config.read(self.config_path)
             saved_username = self.config.get('Account', 'username', fallback='')
             saved_token = self.config.get('Account', 'token', fallback='')
+            saved_password_enc = self.config.get('Account', 'saved_password', fallback='')
+            
+            # Load options
+            self.save_password.set(self.config.getboolean('Account', 'save_password', fallback=False))
+            self.auto_connect.set(self.config.getboolean('Account', 'auto_connect', fallback=False))
+            
+            # Check Windows autostart status
+            self.autostart_windows.set(self._check_autostart())
             
             if saved_username:
                 self.login_username.set(saved_username)
             
-            # If there's a saved token, try auto-login
+            # Load saved password if enabled
+            if saved_password_enc and self.save_password.get():
+                try:
+                    self.login_password.set(base64.b64decode(saved_password_enc).decode('utf-8'))
+                except:
+                    pass
+            
+            # Save auth token for startup sequence (don't auto-login here)
             if saved_token:
                 self.auth_token = saved_token
-                self.root.after(500, self._try_auto_login)
     
     def _try_auto_login(self):
         """Try automatic login with saved token"""
@@ -341,11 +448,21 @@ class NodeGUI:
         self.logged_in = True
         self.user_info = data
         
-        # Save token and username
+        # Save token, username and optionally password
         if 'Account' not in self.config:
             self.config['Account'] = {}
         self.config['Account']['username'] = self.login_username.get()
         self.config['Account']['token'] = self.auth_token or ''
+        self.config['Account']['save_password'] = str(self.save_password.get()).lower()
+        self.config['Account']['auto_connect'] = str(self.auto_connect.get()).lower()
+        
+        # Save password if enabled (encoded in base64)
+        if self.save_password.get() and self.login_password.get():
+            encoded = base64.b64encode(self.login_password.get().encode('utf-8')).decode('utf-8')
+            self.config['Account']['saved_password'] = encoded
+        else:
+            self.config['Account']['saved_password'] = ''
+        
         self._save_config()
         
         # Update UI
@@ -367,6 +484,10 @@ class NodeGUI:
         
         # Load node earnings
         self._load_node_earnings()
+        
+        # After login, ensure models are loaded and apply settings before connecting
+        if self.auto_connect.get():
+            self.root.after(500, self._prepare_and_connect)
     
     def _do_register(self):
         """Execute registration"""
@@ -464,6 +585,103 @@ class NodeGUI:
         # For now show that balance includes node earnings
         self.account_earnings_var.set("Included in balance ⬆️")
     
+    def _check_autostart(self):
+        """Check if autostart is enabled in Windows registry"""
+        if not HAS_WINREG:
+            return False
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                               r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                               0, winreg.KEY_READ)
+            try:
+                winreg.QueryValueEx(key, "AILightningNode")
+                winreg.CloseKey(key)
+                return True
+            except FileNotFoundError:
+                winreg.CloseKey(key)
+                return False
+        except:
+            return False
+    
+    def _toggle_autostart(self):
+        """Toggle Windows autostart"""
+        if not HAS_WINREG:
+            messagebox.showwarning("Not Available", "Windows autostart is not available on this system.")
+            self.autostart_windows.set(False)
+            return
+        
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                               r"Software\Microsoft\Windows\CurrentVersion\Run", 
+                               0, winreg.KEY_SET_VALUE)
+            
+            if self.autostart_windows.get():
+                # Add to autostart
+                exe_path = sys.executable
+                if exe_path.endswith('python.exe') or exe_path.endswith('pythonw.exe'):
+                    # Running from Python, use script path
+                    script_path = os.path.abspath(__file__)
+                    value = f'"{exe_path}" "{script_path}"'
+                else:
+                    # Running as exe
+                    value = f'"{exe_path}"'
+                
+                winreg.SetValueEx(key, "AILightningNode", 0, winreg.REG_SZ, value)
+                self.log("✓ Added to Windows autostart")
+                messagebox.showinfo("Autostart", "✓ AI Lightning Node will start automatically with Windows.")
+            else:
+                # Remove from autostart
+                try:
+                    winreg.DeleteValue(key, "AILightningNode")
+                    self.log("✓ Removed from Windows autostart")
+                    messagebox.showinfo("Autostart", "AI Lightning Node removed from autostart.")
+                except FileNotFoundError:
+                    pass
+            
+            winreg.CloseKey(key)
+        except Exception as e:
+            self.log(f"Error setting autostart: {e}")
+            messagebox.showerror("Error", f"Could not modify autostart: {e}")
+            self.autostart_windows.set(not self.autostart_windows.get())
+    
+    def _auto_connect_to_server(self):
+        """Auto-connect to server after login"""
+        self.log("Auto-connecting to server...")
+        # Switch to Connection tab
+        self.notebook.select(2)
+        # Trigger connection
+        self.root.after(500, self.connect)
+    
+    def _prepare_and_connect(self):
+        """Ensure models and settings are ready, then connect"""
+        print("[AUTO-CONNECT] Preparing for auto-connect...")
+        self.log("Preparing for connection...")
+        
+        # Step 1: Ensure models folder is loaded
+        folder = self.models_folder.get()
+        if folder and os.path.exists(folder):
+            if not self.model_manager:
+                self._init_model_manager(folder, auto_load=False)
+            
+            # Load models if not already loaded
+            if self.model_manager and not self.model_manager.models:
+                self.log("Loading models before connection...")
+                models = self.model_manager.scan_models()
+                if models:
+                    self._update_models_list(models)
+            elif self.model_manager and self.model_manager.models:
+                # Update UI with existing models
+                models = list(self.model_manager.models.values())
+                self._update_models_list(models)
+        
+        # Step 2: Apply restricted mode settings
+        if hasattr(self, 'restricted_mode') and self.restricted_mode.get():
+            self.log(f"Restricted mode: ON ({len(self.allowed_models)} allowed models)")
+            print(f"[AUTO-CONNECT] Restricted mode ON, allowed: {self.allowed_models}")
+        
+        # Step 3: Connect to server
+        self.root.after(500, self._auto_connect_to_server)
+    
     def _create_hardware_tab(self):
         """Hardware information tab"""
         
@@ -539,6 +757,7 @@ class NodeGUI:
         
         ttk.Label(pricing_frame, text="Satoshi/minute:", font=('Arial', 10)).grid(row=0, column=0, sticky='w', pady=5)
         self.price_per_minute = tk.StringVar(value="100")
+        self.price_per_minute.trace_add('write', self._on_price_changed)
         price_spin = ttk.Spinbox(pricing_frame, textvariable=self.price_per_minute, from_=1, to=100000, width=15, font=('Arial', 12))
         price_spin.grid(row=0, column=1, sticky='w', padx=10, pady=5)
         ttk.Label(pricing_frame, text="sats", font=('Arial', 10, 'bold')).grid(row=0, column=2, sticky='w')
@@ -578,25 +797,39 @@ class NodeGUI:
         self.conn_details = tk.StringVar(value="")
         ttk.Label(status_frame, textvariable=self.conn_details, font=('Arial', 9)).pack(anchor='w', pady=5)
         
-        # llama-server settings
-        llama_frame = ttk.LabelFrame(self.conn_frame, text="llama-server Configuration", padding=10)
-        llama_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttk.Label(llama_frame, text="llama-server command:").grid(row=0, column=0, sticky='w', pady=5)
+        # Hidden variables for llama-server (configured via command line)
         self.llama_command = tk.StringVar(value="llama-server")
-        ttk.Entry(llama_frame, textvariable=self.llama_command, width=50).grid(row=0, column=1, padx=10, pady=5, sticky='ew')
-        ttk.Button(llama_frame, text="...", command=self.browse_llama, width=3).grid(row=0, column=2)
-        ttk.Label(llama_frame, text="(leave 'llama-server' if it's in PATH)", font=('Arial', 8)).grid(row=0, column=3, sticky='w', padx=5)
-        
-        ttk.Label(llama_frame, text="GPU Layers (-ngl):").grid(row=1, column=0, sticky='w', pady=5)
-        self.gpu_layers = tk.StringVar(value="99")
-        ttk.Spinbox(llama_frame, textvariable=self.gpu_layers, from_=0, to=999, width=10).grid(row=1, column=1, sticky='w', padx=10, pady=5)
-        ttk.Label(llama_frame, text="(99 = all layers on GPU)", font=('Arial', 8)).grid(row=1, column=2, sticky='w')
-        
-        llama_frame.columnconfigure(1, weight=1)
+        self.gpu_layers = tk.StringVar(value="-1")
     
     def _create_models_tab(self):
         """Models management tab"""
+        
+        # Restricted Mode Frame
+        restricted_frame = ttk.LabelFrame(self.models_frame, text="🔒 Restricted Mode", padding=5)
+        restricted_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Top row with checkbox
+        restricted_top = ttk.Frame(restricted_frame)
+        restricted_top.pack(fill=tk.X)
+        
+        self.restricted_mode = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            restricted_top, 
+            text="Enable Restricted Mode (only allow selected models, block HuggingFace on-demand)", 
+            variable=self.restricted_mode,
+            command=self._on_restricted_mode_change
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Apply button (visible and prominent)
+        self.apply_restricted_btn = ttk.Button(
+            restricted_top, 
+            text="⚡ Apply to Server", 
+            command=self._apply_restricted_settings
+        )
+        self.apply_restricted_btn.pack(side=tk.RIGHT, padx=10)
+        
+        ttk.Label(restricted_frame, text="ℹ️ When enabled, users can only use models marked with ✓ in 'Allowed' column. Click 'Apply to Server' after changes.", 
+                  font=('Arial', 8)).pack(side=tk.LEFT, padx=10)
         
         # Toolbar
         toolbar = ttk.Frame(self.models_frame)
@@ -607,8 +840,6 @@ class NodeGUI:
         ttk.Button(toolbar, text="🤗 Add HuggingFace", command=self._add_huggingface_model).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="☁️ Sync with Server", command=self._sync_models).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="🗑️ Remove", command=self._remove_selected_model).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text="🧹 Clean Old", command=self._cleanup_old_models).pack(side=tk.LEFT, padx=5)
-        ttk.Button(toolbar, text="⚠️ Delete Unused", command=self._delete_unused_models).pack(side=tk.LEFT, padx=5)
         
         # Disk space info
         disk_frame = ttk.LabelFrame(self.models_frame, text="📊 Disk Space", padding=5)
@@ -633,10 +864,11 @@ class NodeGUI:
         list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Treeview for models
-        columns = ('enabled', 'source', 'name', 'params', 'quant', 'size', 'vram', 'context', 'uses')
+        columns = ('enabled', 'allowed', 'source', 'name', 'params', 'quant', 'size', 'vram', 'context', 'uses')
         self.models_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=10)
         
         self.models_tree.heading('enabled', text='✓')
+        self.models_tree.heading('allowed', text='🔒')
         self.models_tree.heading('source', text='Source')
         self.models_tree.heading('name', text='Name / Filename')
         self.models_tree.heading('params', text='Parameters')
@@ -647,8 +879,9 @@ class NodeGUI:
         self.models_tree.heading('uses', text='Uses')
         
         self.models_tree.column('enabled', width=30, anchor='center')
+        self.models_tree.column('allowed', width=30, anchor='center')
         self.models_tree.column('source', width=60, anchor='center')
-        self.models_tree.column('name', width=280)
+        self.models_tree.column('name', width=260)
         self.models_tree.column('params', width=70, anchor='center')
         self.models_tree.column('quant', width=70, anchor='center')
         self.models_tree.column('size', width=70, anchor='center')
@@ -948,12 +1181,117 @@ class NodeGUI:
         folder = filedialog.askdirectory(title="Select GGUF models folder")
         if folder:
             self.models_folder.set(folder)
-            self._init_model_manager(folder)
+            self._save_config()  # Save folder immediately
+            self.log(f"Models folder set to: {folder}")
+            self._init_model_manager(folder, auto_load=False)  # Don't auto-load, will scan
             self._scan_models()
     
-    def _init_model_manager(self, folder):
-        """Initialize model manager"""
+    def _init_model_manager(self, folder, auto_load=True):
+        """Initialize model manager and optionally load saved models"""
         self.model_manager = ModelManager(folder)
+        print(f"[DEBUG] ModelManager initialized with folder: {folder}")
+        print(f"[DEBUG] Loaded {len(self.model_manager.models)} models from config")
+        
+        # Load saved models into the UI immediately if requested
+        if auto_load and self.model_manager.models:
+            # Load immediately instead of with after() - UI should be ready
+            models = list(self.model_manager.models.values())
+            if models and hasattr(self, 'models_tree'):
+                self._update_models_list(models)
+                print(f"[DEBUG] Models list updated with {len(models)} models")
+    
+    def _load_saved_models(self):
+        """Load previously saved models into the UI without rescanning"""
+        if not self.model_manager:
+            return
+        
+        models = list(self.model_manager.models.values())
+        if models:
+            self.log(f"Loading {len(models)} saved models from config...")
+            self._update_models_list(models)
+            self.log(f"✓ Loaded {len(models)} models from saved configuration")
+        else:
+            self.log("No saved models found. Click 'Scan' to find models in the folder.")
+    
+    def _on_restricted_mode_change(self):
+        """Handle restricted mode checkbox change"""
+        is_restricted = self.restricted_mode.get()
+        self._save_config()
+        self.log(f"Restricted mode: {'enabled' if is_restricted else 'disabled'}")
+        
+        # Update client settings
+        if self.client:
+            self.client.restricted_models = is_restricted
+        
+        if is_restricted and not self.allowed_models:
+            messagebox.showinfo("Restricted Mode", 
+                "Restricted mode enabled!\n\n"
+                "Now double-click on the 🔒 column to select which models\n"
+                "are allowed when users connect to your node.\n\n"
+                "Users will NOT be able to request HuggingFace models on-demand.\n\n"
+                "Click '⚡ Apply to Server' to send changes to the server.")
+    
+    def _apply_restricted_settings(self):
+        """Force sync restricted mode settings to server"""
+        if not self.client:
+            messagebox.showerror("Error", "Not connected. Please connect first.")
+            return
+            
+        if not self.client.is_connected():
+            messagebox.showerror("Error", "Not connected to server. Please reconnect.")
+            return
+        
+        # Update client with current settings
+        is_restricted = self.restricted_mode.get()
+        allowed_list = list(self.allowed_models)
+        
+        self.client.restricted_models = is_restricted
+        self.client.allowed_models_list = allowed_list
+        
+        self.log(f"Applying restricted settings to server...")
+        self.log(f"  - Restricted mode: {is_restricted}")
+        self.log(f"  - Allowed models: {allowed_list}")
+        
+        # Sync settings
+        success = self.client.sync_settings()
+        
+        if success:
+            self.log("✓ Settings applied to server successfully!")
+            messagebox.showinfo("Success", 
+                f"Settings applied to server!\n\n"
+                f"Restricted Mode: {'ON' if is_restricted else 'OFF'}\n"
+                f"Allowed Models: {len(allowed_list)}")
+        else:
+            self.log("✗ Failed to apply settings to server")
+            messagebox.showerror("Error", "Failed to sync settings. Check connection.")
+    
+    def _save_restricted_config(self):
+        """Save restricted mode settings to config"""
+        self._save_config()
+        
+        allowed_list = list(self.allowed_models)
+        is_restricted = self.restricted_mode.get() if hasattr(self, 'restricted_mode') else False
+        
+        self.log(f"Restricted config saved locally: restricted={is_restricted}, {len(allowed_list)} models allowed")
+        
+        # Update client settings (but don't sync - user will click Apply)
+        if self.client:
+            self.client.allowed_models_list = allowed_list
+            self.client.restricted_models = is_restricted
+            self.log("ℹ️ Click '⚡ Apply to Server' to send changes to the server")
+    
+    def _on_price_changed(self, *args):
+        """Handle price per minute change"""
+        try:
+            price = int(self.price_per_minute.get())
+            self._save_config()
+            
+            # Sync settings to server if connected
+            if self.client and self.client.is_connected():
+                self.client.price_per_minute = price
+                self.client.sync_settings()
+        except ValueError:
+            pass  # Invalid value, ignore
     
     def _scan_models(self):
         """Scan models"""
@@ -962,7 +1300,7 @@ class NodeGUI:
             if not folder:
                 messagebox.showwarning("Warning", "Select a models folder first")
                 return
-            self._init_model_manager(folder)
+            self._init_model_manager(folder, auto_load=False)
         
         self.update_status("Scanning models...")
         
@@ -985,10 +1323,16 @@ class NodeGUI:
         # Sort models: unused first (use_count = 0), then by use_count ascending
         sorted_models = sorted(models, key=lambda m: (getattr(m, 'use_count', 0) > 0, getattr(m, 'use_count', 0)))
         
+        # Initialize allowed_models set if not exists
+        if not hasattr(self, 'allowed_models'):
+            self.allowed_models = set()
+        
         # Add models
         unused_count = 0
         for model in sorted_models:
             enabled = '✓' if model.enabled else '✗'
+            # Check if model is allowed in restricted mode
+            allowed = '✓' if model.id in self.allowed_models else '✗'
             # Indicate if HuggingFace or local
             source = '🤗 HF' if getattr(model, 'is_huggingface', False) else '📁 Local'
             # Use filename as display name (full GGUF filename)
@@ -1003,6 +1347,7 @@ class NodeGUI:
             
             self.models_tree.insert('', 'end', iid=model.id, values=(
                 enabled,
+                allowed,
                 source,
                 display_name,
                 model.parameters,
@@ -1032,14 +1377,38 @@ class NodeGUI:
         if self.model_manager:
             model = self.model_manager.get_model_by_id(model_id)
             if model:
-                new_state = not model.enabled
-                self.model_manager.set_model_enabled(model_id, new_state)
+                # Check which column was clicked
+                column = self.models_tree.identify_column(event.x)
                 
-                # Update UI (first column is enabled)
-                enabled = '✓' if new_state else '✗'
-                values = list(self.models_tree.item(model_id, 'values'))
-                values[0] = enabled
-                self.models_tree.item(model_id, values=values)
+                if column == '#1':  # Enabled column
+                    new_state = not model.enabled
+                    self.model_manager.set_model_enabled(model_id, new_state)
+                    
+                    # Update UI (first column is enabled)
+                    enabled = '✓' if new_state else '✗'
+                    values = list(self.models_tree.item(model_id, 'values'))
+                    values[0] = enabled
+                    self.models_tree.item(model_id, values=values)
+                    
+                elif column == '#2':  # Allowed column (for restricted mode)
+                    if not hasattr(self, 'allowed_models'):
+                        self.allowed_models = set()
+                    
+                    if model_id in self.allowed_models:
+                        self.allowed_models.discard(model_id)
+                        self.log(f"Model '{model_id}' removed from allowed list")
+                    else:
+                        self.allowed_models.add(model_id)
+                        self.log(f"Model '{model_id}' added to allowed list")
+                    
+                    # Update UI (second column is allowed)
+                    allowed = '✓' if model_id in self.allowed_models else '✗'
+                    values = list(self.models_tree.item(model_id, 'values'))
+                    values[1] = allowed
+                    self.models_tree.item(model_id, values=values)
+                    
+                    # Save to config and sync to server
+                    self._save_restricted_config()
     
     def _on_model_select(self, event):
         """Model selection"""
@@ -1071,7 +1440,7 @@ class NodeGUI:
         """Open dialog to add HuggingFace model"""
         # Create model_manager if it doesn't exist (use current directory for config)
         if not self.model_manager:
-            self._init_model_manager(os.getcwd())
+            self._init_model_manager(os.getcwd(), auto_load=False)
         
         dialog = HuggingFaceModelDialog(self.root, self.model_manager)
         if dialog.result:
@@ -1272,12 +1641,28 @@ class NodeGUI:
         # Fixed server - use direct IP
         self.server_url.set("http://51.178.142.183:5000")
         
+        # Initialize restricted mode variables
+        if not hasattr(self, 'allowed_models'):
+            self.allowed_models = set()
+        
         if os.path.exists(self.config_path):
             self.config.read(self.config_path)
             
             self.node_name.set(self.config.get('Node', 'name', fallback=''))
             self.token.set(self.config.get('Node', 'token', fallback=''))
             self.price_per_minute.set(self.config.get('Node', 'price_per_minute', fallback='100'))
+            
+            # Load restricted mode settings
+            restricted = self.config.getboolean('Node', 'restricted_models', fallback=False)
+            if hasattr(self, 'restricted_mode'):
+                self.restricted_mode.set(restricted)
+            
+            # Load allowed models list
+            allowed_str = self.config.get('Node', 'allowed_models_list', fallback='')
+            if allowed_str:
+                self.allowed_models = set(m.strip() for m in allowed_str.split(',') if m.strip())
+                print(f"Loaded {len(self.allowed_models)} allowed models: {self.allowed_models}")
+            
             # Supporta sia il nuovo 'command' che il vecchio 'bin'
             llama_cmd = self.config.get('LLM', 'command', fallback='')
             if not llama_cmd:
@@ -1286,9 +1671,20 @@ class NodeGUI:
             self.gpu_layers.set(self.config.get('LLM', 'gpu_layers', fallback='99'))
             
             models_dir = self.config.get('Models', 'directory', fallback='')
+            print(f"[DEBUG] Models directory from config: '{models_dir}'")
             if models_dir:
-                self.models_folder.set(models_dir)
-                self._init_model_manager(models_dir)
+                # Normalize path for Windows
+                models_dir = os.path.normpath(models_dir)
+                print(f"[DEBUG] Normalized path: '{models_dir}'")
+                print(f"[DEBUG] Path exists: {os.path.exists(models_dir)}")
+                
+                if os.path.exists(models_dir):
+                    self.models_folder.set(models_dir)
+                    # Initialize and auto-load saved models
+                    self._init_model_manager(models_dir, auto_load=True)
+                    self.log(f"Models folder loaded: {models_dir}")
+                else:
+                    print(f"[DEBUG] Models directory does not exist: {models_dir}")
         else:
             # Auto-rileva llama-server
             llama_cmd = find_llama_binary()
@@ -1297,6 +1693,11 @@ class NodeGUI:
     
     def _save_config(self):
         """Save configuration"""
+        # Don't save if config hasn't been fully loaded yet
+        if not getattr(self, 'config_loaded', False):
+            print("[SAVE_CONFIG] Skipping save - config not fully loaded yet")
+            return
+        
         for section in ['Node', 'Server', 'LLM', 'Models', 'Account']:
             if section not in self.config:
                 self.config[section] = {}
@@ -1306,9 +1707,22 @@ class NodeGUI:
         self.config['Node']['name'] = self.node_name.get()
         self.config['Node']['token'] = self.token.get()
         self.config['Node']['price_per_minute'] = self.price_per_minute.get()
+        
+        # Save restricted mode settings (only if values are meaningful)
+        if hasattr(self, 'restricted_mode'):
+            self.config['Node']['restricted_models'] = str(self.restricted_mode.get()).lower()
+        if hasattr(self, 'allowed_models') and self.allowed_models:
+            self.config['Node']['allowed_models_list'] = ','.join(self.allowed_models)
+        # Don't clear allowed_models_list if self.allowed_models is empty but config has values
+        
         self.config['LLM']['command'] = self.llama_command.get()
         self.config['LLM']['gpu_layers'] = self.gpu_layers.get()
-        self.config['Models']['directory'] = self.models_folder.get()
+        
+        # Only save models directory if it has a value (don't overwrite with empty)
+        current_models_dir = self.models_folder.get()
+        if current_models_dir:
+            self.config['Models']['directory'] = current_models_dir
+        # If empty but config has a value, keep the config value (don't overwrite)
         
         # Save account credentials (if variables exist)
         if hasattr(self, 'login_username'):
@@ -1340,6 +1754,16 @@ class NodeGUI:
                 self.client = NodeClient(self.config_path)
                 self.client.server_url = self.server_url.get()
                 self.client.node_name = self.node_name.get()
+                
+                # Pass restricted mode settings
+                if hasattr(self, 'restricted_mode'):
+                    self.client.restricted_models = self.restricted_mode.get()
+                    self.log(f"Restricted mode: {self.client.restricted_models}")
+                if hasattr(self, 'allowed_models') and self.allowed_models:
+                    self.client.allowed_models_list = list(self.allowed_models)
+                    self.log(f"Allowed models: {self.client.allowed_models_list}")
+                else:
+                    self.log(f"No allowed models configured")
                 
                 # Pass user authentication token
                 self.client.auth_token = self.auth_token
@@ -1454,6 +1878,25 @@ class NodeGUI:
                 f.write(self.log_text.get('1.0', tk.END))
             self.log_text.config(state='disabled')
             self.update_status(f"Log saved to {path}")
+    
+    # === Settings ===
+    
+    def open_settings(self):
+        """Open the settings dialog."""
+        # Get server URL from config
+        server_url = None
+        if self.config.has_option('server', 'url'):
+            server_url = self.config.get('server', 'url')
+        
+        # Open settings dialog with config for saving preferences
+        SettingsDialog(
+            self.root,
+            self.updater,
+            server_url=server_url,
+            auth_token=self.auth_token,
+            config=self.config,
+            config_path=self.config_path
+        )
     
     # === Auto-Updater ===
     
@@ -1867,6 +2310,234 @@ The model will be downloaded automatically from HuggingFace when you start a ses
                 messagebox.showerror("Error", "Unable to add the model", parent=self.dialog)
         else:
             messagebox.showerror("Error", "Model Manager not initialized", parent=self.dialog)
+
+
+class SettingsDialog:
+    """Settings dialog window showing version info and update options."""
+    
+    def __init__(self, parent, updater, server_url=None, auth_token=None, config=None, config_path=None):
+        self.parent = parent
+        self.updater = updater
+        self.server_url = server_url
+        self.auth_token = auth_token
+        self.config = config
+        self.config_path = config_path
+        self.min_version = "Unknown"
+        self.latest_version = "Unknown"
+        
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("⚙️ Settings")
+        self.dialog.geometry("450x520")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+        
+        # Main frame with padding
+        main_frame = ttk.Frame(self.dialog, padding=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # === Notifications Section ===
+        notif_frame = ttk.LabelFrame(main_frame, text="📧 Email Notifications", padding=15)
+        notif_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Load current settings
+        self.email_offline_var = tk.BooleanVar(value=False)
+        if self.config and self.config.has_option('Notifications', 'email_on_offline'):
+            self.email_offline_var.set(self.config.getboolean('Notifications', 'email_on_offline', fallback=False))
+        
+        # Email when offline checkbox
+        self.email_offline_cb = ttk.Checkbutton(
+            notif_frame, 
+            text="Send email when node goes offline",
+            variable=self.email_offline_var,
+            command=self._on_notification_change
+        )
+        self.email_offline_cb.pack(anchor='w', pady=5)
+        
+        ttk.Label(notif_frame, text="ℹ️ Email will be sent to the address linked to your account", 
+                  font=('Arial', 8), foreground='gray').pack(anchor='w')
+        
+        # === Version Info Section ===
+        version_frame = ttk.LabelFrame(main_frame, text="📋 Software Version", padding=15)
+        version_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Current version
+        current_row = ttk.Frame(version_frame)
+        current_row.pack(fill=tk.X, pady=5)
+        ttk.Label(current_row, text="Current Version:", font=('Arial', 10, 'bold')).pack(side=tk.LEFT)
+        self.current_label = ttk.Label(current_row, text=f"v{VERSION}", font=('Arial', 10), foreground='#4caf50')
+        self.current_label.pack(side=tk.RIGHT)
+        
+        # Minimum version required
+        min_row = ttk.Frame(version_frame)
+        min_row.pack(fill=tk.X, pady=5)
+        ttk.Label(min_row, text="Minimum Required:", font=('Arial', 10)).pack(side=tk.LEFT)
+        self.min_label = ttk.Label(min_row, text="Loading...", font=('Arial', 10), foreground='#ff9800')
+        self.min_label.pack(side=tk.RIGHT)
+        
+        # Latest available version
+        latest_row = ttk.Frame(version_frame)
+        latest_row.pack(fill=tk.X, pady=5)
+        ttk.Label(latest_row, text="Latest Available:", font=('Arial', 10)).pack(side=tk.LEFT)
+        self.latest_label = ttk.Label(latest_row, text="Loading...", font=('Arial', 10), foreground='#94c5f9')
+        self.latest_label.pack(side=tk.RIGHT)
+        
+        # Version status
+        self.status_var = tk.StringVar(value="Checking version status...")
+        self.status_label = ttk.Label(version_frame, textvariable=self.status_var, font=('Arial', 9), foreground='gray')
+        self.status_label.pack(pady=(10, 0))
+        
+        # === Update Section ===
+        update_frame = ttk.LabelFrame(main_frame, text="🔄 Updates", padding=15)
+        update_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Update button
+        self.update_btn = ttk.Button(update_frame, text="Check for Updates", command=self._check_updates, width=25)
+        self.update_btn.pack(pady=10)
+        
+        # Progress info
+        self.progress_var = tk.StringVar(value="")
+        ttk.Label(update_frame, textvariable=self.progress_var, font=('Arial', 9)).pack()
+        
+        # === About Section ===
+        about_frame = ttk.LabelFrame(main_frame, text="ℹ️ About", padding=15)
+        about_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        about_text = f"""LightPhon Node Client v{VERSION}
+
+Host your GPU and earn Bitcoin via Lightning Network.
+Provide AI inference services to users worldwide.
+
+© 2025 LightPhon - Decentralized AI Marketplace"""
+        
+        ttk.Label(about_frame, text=about_text, justify=tk.CENTER, font=('Arial', 9)).pack()
+        
+        # Close button
+        ttk.Button(main_frame, text="Close", command=self.dialog.destroy, width=15).pack(pady=10)
+        
+        # Fetch version info
+        self.dialog.after(100, self._fetch_version_info)
+        
+        # Wait for close
+        self.dialog.wait_window()
+    
+    def _fetch_version_info(self):
+        """Fetch version info from server."""
+        def fetch_thread():
+            try:
+                import urllib.request
+                
+                # Build URL - use server from config if available
+                server_url = self.server_url or "http://51.178.142.183:5000"
+                url = f"{server_url}/api/version"
+                
+                req = urllib.request.Request(url)
+                req.add_header('User-Agent', f'LightPhon-Node/{VERSION}')
+                
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    data = json.loads(response.read().decode())
+                
+                self.min_version = data.get('min_version', 'Unknown')
+                self.latest_version = data.get('version', 'Unknown')
+                
+                # Update UI from main thread
+                self.dialog.after(0, lambda: self._update_version_display(self.min_version, self.latest_version))
+                
+            except Exception as e:
+                self.dialog.after(0, lambda: self._update_version_display("Error", "Error"))
+                self.dialog.after(0, lambda: self.status_var.set(f"Unable to fetch version info: {str(e)[:50]}"))
+        
+        threading.Thread(target=fetch_thread, daemon=True).start()
+    
+    def _update_version_display(self, min_ver, latest_ver):
+        """Update the version labels with fetched data."""
+        self.min_label.config(text=f"v{min_ver}")
+        self.latest_label.config(text=f"v{latest_ver}")
+        
+        # Compare versions and show status
+        from version import is_newer
+        
+        # Check if current version meets minimum
+        if min_ver != "Error" and min_ver != "Unknown":
+            try:
+                if is_newer(min_ver, VERSION):
+                    self.status_var.set("⚠️ Your version is BELOW the minimum required! Update needed.")
+                    self.status_label.config(foreground='red')
+                    self.current_label.config(foreground='red')
+                elif is_newer(latest_ver, VERSION):
+                    self.status_var.set("ℹ️ A newer version is available.")
+                    self.status_label.config(foreground='orange')
+                else:
+                    self.status_var.set("✅ You are running the latest version!")
+                    self.status_label.config(foreground='green')
+            except:
+                self.status_var.set("✅ Version check complete.")
+    
+    def _check_updates(self):
+        """Check for available updates."""
+        self.update_btn.config(state='disabled')
+        self.progress_var.set("Checking for updates...")
+        
+        def check_thread():
+            try:
+                if self.updater:
+                    update = self.updater.check_for_updates()
+                    if update:
+                        self.dialog.after(0, lambda: self._show_update_available(update))
+                    else:
+                        self.dialog.after(0, lambda: self._no_update_available())
+                else:
+                    self.dialog.after(0, lambda: self.progress_var.set("Updater not available"))
+            except Exception as e:
+                self.dialog.after(0, lambda: self.progress_var.set(f"Error: {str(e)[:40]}"))
+            finally:
+                self.dialog.after(0, lambda: self.update_btn.config(state='normal'))
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+    
+    def _show_update_available(self, update):
+        """Show that an update is available."""
+        version = update.get('version', 'Unknown')
+        self.progress_var.set(f"Update available: v{version}")
+        
+        response = messagebox.askyesno(
+            "Update Available",
+            f"Version {version} is available!\n\n"
+            f"Changelog:\n{update.get('changelog', '')[:300]}...\n\n"
+            "Do you want to download and install the update?",
+            parent=self.dialog
+        )
+        
+        if response:
+            self.progress_var.set("Starting download...")
+            # Trigger the main app's update mechanism
+            if self.updater and self.updater.callback:
+                self.updater.callback(version, update.get('changelog', ''), update.get('download_url'))
+            self.dialog.destroy()
+    
+    def _no_update_available(self):
+        """Show that no update is available."""
+        self.progress_var.set(f"✅ You have the latest version (v{VERSION})")
+        messagebox.showinfo("No Updates", f"You are running the latest version (v{VERSION}).", parent=self.dialog)
+    
+    def _on_notification_change(self):
+        """Save notification settings when changed."""
+        if not self.config or not getattr(self, 'config_loaded', False):
+            return
+        
+        # Ensure Notifications section exists
+        if 'Notifications' not in self.config:
+            self.config['Notifications'] = {}
+        
+        # Save settings
+        self.config['Notifications']['email_on_offline'] = str(self.email_offline_var.get()).lower()
+        
+        # Write to file
+        if self.config_path:
+            try:
+                with open(self.config_path, 'w') as f:
+                    self.config.write(f)
+            except Exception as e:
+                print(f"Error saving notification settings: {e}")
 
 
 if __name__ == '__main__':

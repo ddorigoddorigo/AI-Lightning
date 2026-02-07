@@ -38,7 +38,7 @@ let isAdmin = false;
 // LLM Parameters (with defaults)
 let llmParams = {
     // Sampling parameters
-    temperature: 0.7,
+    temperature: 0.05,
     dynatemp_range: 0,
     dynatemp_exponent: 1,
     top_p: 0.95,
@@ -75,6 +75,9 @@ let sessionActive = false;
 // Initialization
 // ===========================================
 document.addEventListener('DOMContentLoaded', () => {
+    // Check for email verification result
+    checkVerificationResult();
+    
     // Load network info (available without login)
     loadNetworkInfo();
     
@@ -166,6 +169,46 @@ function updateNetworkPanel(nodes) {
 }
 
 // ===========================================
+// Email Verification
+// ===========================================
+function checkVerificationResult() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const verification = urlParams.get('verification');
+    
+    if (verification === 'success') {
+        showSuccess('✅ Email verified successfully! You can now login.');
+        // Clean URL
+        window.history.replaceState({}, document.title, '/');
+    } else if (verification === 'invalid') {
+        showError('❌ Invalid or already used verification link.');
+        window.history.replaceState({}, document.title, '/');
+    } else if (verification === 'expired') {
+        showError('❌ Verification link has expired. Please register again.');
+        window.history.replaceState({}, document.title, '/');
+    }
+}
+
+async function resendVerificationEmail(email) {
+    try {
+        const response = await fetch('/api/resend-verification', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showSuccess('Verification email sent! Please check your inbox.');
+        } else {
+            showError(data.error || 'Failed to resend verification email');
+        }
+    } catch (error) {
+        showError('Error sending verification email');
+    }
+}
+
+// ===========================================
 // Authentication
 // ===========================================
 function showAuth() {
@@ -210,6 +253,11 @@ async function login() {
         const data = await response.json();
         
         if (!response.ok) {
+            // Check if email not verified
+            if (data.email_not_verified && data.email) {
+                showEmailNotVerifiedError(data.email);
+                return;
+            }
             throw new Error(data.error || 'Login failed');
         }
 
@@ -223,12 +271,42 @@ async function login() {
     }
 }
 
+function showEmailNotVerifiedError(email) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error-message';
+    errorDiv.innerHTML = `
+        <p>📧 Email not verified.</p>
+        <p>Please check your inbox and click the verification link.</p>
+        <button onclick="resendVerificationEmail('${email}')" class="btn-secondary" style="margin-top: 10px;">
+            Resend verification email
+        </button>
+    `;
+    
+    // Show in auth section
+    const authSection = document.getElementById('auth-section');
+    const existingError = authSection.querySelector('.error-message');
+    if (existingError) existingError.remove();
+    
+    authSection.insertBefore(errorDiv, authSection.firstChild);
+    
+    // Auto-remove after 30 seconds
+    setTimeout(() => errorDiv.remove(), 30000);
+}
+
 async function register() {
     const username = document.getElementById('reg-username').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
     const password = document.getElementById('reg-password').value;
 
-    if (!username || !password) {
-        showError('Please enter username and password');
+    if (!username || !email || !password) {
+        showError('Please enter username, email, and password');
+        return;
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        showError('Please enter a valid email address');
         return;
     }
     
@@ -241,7 +319,7 @@ async function register() {
         const response = await fetch('/api/register', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({username, password})
+            body: JSON.stringify({ username, email, password })
         });
 
         // Verifica che la risposta sia JSON
@@ -256,7 +334,8 @@ async function register() {
             throw new Error(data.error || 'Registration failed');
         }
 
-        showSuccess('Registration successful! Please login.');
+        // Show verification message
+        showSuccess('📧 Registration successful! Please check your email and click the verification link to activate your account.');
         showLoginForm();
     } catch (error) {
         showError(error.message);
@@ -574,11 +653,18 @@ function renderNodesGrid(nodes) {
             ? '<span class="node-restricted-badge" title="Only pre-configured models allowed">🔒 Restricted</span>' 
             : '';
         
+        // Version badge
+        const nodeVersion = node.version || 'unknown';
+        const versionBadge = nodeVersion !== 'unknown' 
+            ? `<span class="node-version-badge">v${nodeVersion}</span>` 
+            : '';
+        
         card.innerHTML = `
             <div class="node-header">
                 <span class="node-name">🖥️ ${node.name || node.node_id.substring(0, 8)}</span>
                 <span class="node-status ${node.status}">${node.status}</span>
                 ${restrictedBadge}
+                ${versionBadge}
             </div>
             
             <div class="node-price">
@@ -748,16 +834,43 @@ function renderNodeModels(models) {
         'default': '🧠'
     };
     
-    models.forEach(model => {
+    // Sort models: allowed first, then not allowed
+    const isRestricted = selectedNode && (selectedNode.restricted_models || selectedNode.isRestricted);
+    const allowedList = selectedNode ? (selectedNode.allowed_models_list || []) : [];
+    
+    const sortedModels = [...models].sort((a, b) => {
+        const aId = a.id || a.name;
+        const bId = b.id || b.name;
+        const aAllowed = !isRestricted || allowedList.length === 0 || allowedList.includes(aId);
+        const bAllowed = !isRestricted || allowedList.length === 0 || allowedList.includes(bId);
+        
+        // Allowed first
+        if (aAllowed && !bAllowed) return -1;
+        if (!aAllowed && bAllowed) return 1;
+        return 0;
+    });
+    
+    sortedModels.forEach(model => {
         const card = document.createElement('div');
-        card.className = 'model-card';
-        card.onclick = () => selectModel(model);
+        
+        const modelId = model.id || model.name;
+        
+        // If restricted and has allowed list, check if this model is allowed
+        const isAllowed = !isRestricted || allowedList.length === 0 || allowedList.includes(modelId);
+        
+        card.className = 'model-card' + (isAllowed ? '' : ' model-disabled');
+        
+        if (isAllowed) {
+            card.onclick = () => selectModel(model);
+        } else {
+            card.onclick = () => showError('This model is not allowed on this restricted node');
+        }
         
         const icon = icons[model.architecture] || icons.default;
         
         card.innerHTML = `
             <div class="model-icon">${icon}</div>
-            <div class="model-name">${model.name}</div>
+            <div class="model-name">${model.name}${!isAllowed ? ' 🔒' : ''}</div>
             <div class="model-info">
                 <span class="param">${model.parameters || 'Unknown'}</span>
                 <span class="quant">${model.quantization || 'Unknown'}</span>
@@ -766,6 +879,7 @@ function renderNodeModels(models) {
                 <span>Context: ${(model.context_length || 4096).toLocaleString()}</span>
                 <span>VRAM: ${model.min_vram_mb ? (model.min_vram_mb/1024).toFixed(1) + 'GB' : '?'}</span>
             </div>
+            ${!isAllowed ? '<div class="model-restricted-badge">Not Allowed</div>' : ''}
         `;
         
         grid.appendChild(card);
@@ -1196,7 +1310,7 @@ function setupLLMParamSliders() {
 // Default LLM parameters
 const defaultLLMParams = {
     // Sampling parameters
-    temperature: 0.7,
+    temperature: 0.05,
     dynatemp_range: 0,
     dynatemp_exponent: 1,
     top_p: 0.95,
@@ -1733,7 +1847,7 @@ function startChatUI() {
     document.getElementById('prompt').focus();
     
     // Clear chat
-    document.getElementById('chat').innerHTML = '<div class="message system">Session started! You can now chat with the AI.</div>';
+    document.getElementById('chat').innerHTML = '<div class="message system">Session started! You can be ready in some seconds.</div>';
 }
 
 function endSession() {
@@ -1796,7 +1910,7 @@ function connectSocket() {
             expiresEl.textContent = `Expires: ${new Date(data.expires_at).toLocaleTimeString()}`;
         }
         startChatUI();
-        addMessage('System', `Connected to node ${data.node_id}. Model ready!`);
+        addMessage('System', `Connected to node ${data.node_id}. Model near ready.`);
     });
     
     // Model loading status updates
@@ -1844,7 +1958,7 @@ function connectSocket() {
     
     socket.on('session_ready', (data) => {
         hideLoadingOverlay();
-        addMessage('System', 'Session ready!');
+        addMessage('System', '<span style="font-size: 1.5em; color: white; font-weight: bold;">Wait! In some seconds you can now chat with the AI</span>');
         enableInput();
     });
 
@@ -1882,13 +1996,17 @@ function connectSocket() {
         console.log('ai_response received:', data);
         removeLoadingIndicator();
         
-        if (data.streaming_complete && currentStreamingMessageId) {
-            // Streaming completed - update with final clean content
-            finalizeStreamingMessage(currentStreamingMessageId, data.response);
-            currentStreamingMessageId = null;
-            streamingContent = '';
+        if (data.streaming_complete) {
+            // Streaming completed - only finalize if there's a streaming message in progress
+            if (currentStreamingMessageId) {
+                finalizeStreamingMessage(currentStreamingMessageId, data.response);
+                currentStreamingMessageId = null;
+                streamingContent = '';
+            }
+            // If no streaming message, the ai_token with is_final already handled it
+            // Don't add a duplicate message
         } else if (!currentStreamingMessageId) {
-            // Normal non-streaming response
+            // Normal non-streaming response (no streaming was in progress)
             addMessage('AI', data.response);
         }
         
@@ -1978,6 +2096,24 @@ function connectSocket() {
         // Reload models to update availability
         loadModels();
     });
+    
+    // Event: generation stopped by user
+    socket.on('generation_stopped', (data) => {
+        console.log('Generation stopped:', data);
+        // Re-enable input
+        enableInput();
+        // Add a note to the chat
+        const messagesDiv = document.getElementById('messages');
+        if (messagesDiv) {
+            const lastMessage = messagesDiv.lastElementChild;
+            if (lastMessage && lastMessage.classList.contains('message-ai')) {
+                const content = lastMessage.querySelector('.message-content');
+                if (content) {
+                    content.innerHTML += '<br><em style="color: var(--text-muted);">[Generation stopped]</em>';
+                }
+            }
+        }
+    });
 
     socket.on('disconnect', () => {
         console.log('Disconnected');
@@ -2004,12 +2140,21 @@ function sendMessage() {
     isWaitingForResponse = true;
     promptInput.disabled = true;
     document.getElementById('send-btn').disabled = true;
+    
+    // Show stop button, hide send button
+    const stopBtn = document.getElementById('stop-btn');
+    if (stopBtn) {
+        stopBtn.style.display = 'inline-block';
+    }
+    
     console.log('Input disabled, waiting for response');
     
     addLoadingIndicator();
 
     // Send message with all configured LLM parameters
     const params = getLLMParams();
+    console.log('LLM Parameters being sent:', params);
+    console.log('Temperature:', params.temperature, 'Top K:', params.top_k, 'Top P:', params.top_p);
     socket.emit('chat_message', {
         session_id: currentSession,
         prompt: prompt,
@@ -2057,6 +2202,8 @@ function enableInput() {
     isWaitingForResponse = false;
     const promptInput = document.getElementById('prompt');
     const sendBtn = document.getElementById('send-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    
     if (promptInput) {
         promptInput.disabled = false;
         console.log('promptInput.disabled set to false');
@@ -2065,8 +2212,29 @@ function enableInput() {
         sendBtn.disabled = false;
         console.log('sendBtn.disabled set to false');
     }
+    // Hide stop button
+    if (stopBtn) {
+        stopBtn.style.display = 'none';
+    }
     if (promptInput) promptInput.focus();
     console.log('enableInput complete');
+}
+
+function stopGeneration() {
+    if (!currentSession || !isWaitingForResponse) {
+        console.log('stopGeneration: nothing to stop');
+        return;
+    }
+    
+    console.log('Stopping generation for session:', currentSession);
+    socket.emit('stop_generation', { session_id: currentSession });
+    
+    // Show feedback
+    const stopBtn = document.getElementById('stop-btn');
+    if (stopBtn) {
+        stopBtn.textContent = '⏳ Stopping...';
+        stopBtn.disabled = true;
+    }
 }
 
 function addLoadingIndicator() {
@@ -2740,6 +2908,9 @@ async function loadAdminData() {
     }
     
     try {
+        // Load settings first
+        loadAdminSettings();
+        
         // Load stats
         console.log('Fetching admin stats...');
         const statsRes = await fetch('/api/admin/stats', {
@@ -2759,6 +2930,9 @@ async function loadAdminData() {
             const errorData = await statsRes.json().catch(() => ({}));
             console.error('Admin stats error:', statsRes.status, errorData);
         }
+        
+        // Load nodes with versions
+        loadAdminNodes();
         
         // Load commissions chart
         loadCommissionsChart();
@@ -2865,5 +3039,123 @@ async function loadAdminTransactions() {
         
     } catch (error) {
         console.error('Error loading admin transactions:', error);
+    }
+}
+
+// ===========================================
+// Admin Settings Functions
+// ===========================================
+async function loadAdminSettings() {
+    try {
+        const res = await fetch('/api/admin/settings', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!res.ok) return;
+        
+        const settings = await res.json();
+        
+        // Update UI
+        document.getElementById('admin-current-version').textContent = settings.node_client_version || '-';
+        document.getElementById('admin-min-version').value = settings.min_node_version || '1.0.0';
+        document.getElementById('admin-commission-rate').textContent = 
+            `${((settings.platform_commission_rate || 0.1) * 100).toFixed(0)}%`;
+        document.getElementById('admin-test-mode').textContent = 
+            settings.test_mode === 'true' || settings.test_mode === true ? '✅ Enabled' : '❌ Disabled';
+        
+    } catch (error) {
+        console.error('Error loading admin settings:', error);
+    }
+}
+
+async function updateMinNodeVersion() {
+    const newVersion = document.getElementById('admin-min-version').value.trim();
+    
+    if (!newVersion || !/^\d+\.\d+\.\d+$/.test(newVersion)) {
+        showError('Invalid version format. Use X.Y.Z (e.g., 1.0.0)');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/admin/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({ min_node_version: newVersion })
+        });
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Failed to update settings');
+        }
+        
+        showSuccess(`Minimum node version updated to ${newVersion}`);
+        loadAdminNodes();  // Refresh nodes list to show updated outdated status
+        
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+async function loadAdminNodes() {
+    try {
+        const res = await fetch('/api/admin/nodes', {
+            headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        const container = document.getElementById('admin-nodes-list');
+        
+        if (!data.nodes || data.nodes.length === 0) {
+            container.innerHTML = '<p class="no-data">No nodes online</p>';
+            return;
+        }
+        
+        container.innerHTML = data.nodes.map(node => {
+            const versionClass = node.is_outdated ? 'version-outdated' : 'version-ok';
+            const versionIcon = node.is_outdated ? '⚠️' : '✅';
+            const busyBadge = node.is_busy ? 
+                `<span class="badge badge-busy">🔴 In use (${Math.floor(node.busy_info.seconds_remaining / 60)}m left)</span>` : 
+                '<span class="badge badge-free">🟢 Available</span>';
+            
+            return `
+                <div class="admin-node-card ${node.is_outdated ? 'node-outdated' : ''}">
+                    <div class="node-header">
+                        <span class="node-name">${node.name}</span>
+                        ${busyBadge}
+                    </div>
+                    <div class="node-details">
+                        <div class="node-detail">
+                            <span class="label">Version:</span>
+                            <span class="${versionClass}">${versionIcon} ${node.version}</span>
+                        </div>
+                        <div class="node-detail">
+                            <span class="label">Owner:</span>
+                            <span>${node.owner_username || 'Anonymous'}</span>
+                        </div>
+                        <div class="node-detail">
+                            <span class="label">Price:</span>
+                            <span>⚡ ${node.price_per_minute} sats/min</span>
+                        </div>
+                        <div class="node-detail">
+                            <span class="label">GPU:</span>
+                            <span>${node.gpu_count} GPU${node.gpu_count !== 1 ? 's' : ''} (${(node.total_vram_mb / 1024).toFixed(1)} GB)</span>
+                        </div>
+                        <div class="node-detail">
+                            <span class="label">Models:</span>
+                            <span>${node.models_count} available</span>
+                        </div>
+                    </div>
+                    <div class="node-id">${node.node_id}</div>
+                </div>
+            `;
+        }).join('');
+        
+    } catch (error) {
+        console.error('Error loading admin nodes:', error);
     }
 }

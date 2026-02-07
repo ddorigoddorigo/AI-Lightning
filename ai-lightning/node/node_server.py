@@ -321,7 +321,7 @@ def completion(session_id):
             json={
                 'prompt': prompt,
                 'n_predict': data.get('max_tokens', 256),
-                'temperature': data.get('temperature', 0.7),
+                'temperature': data.get('temperature', 0.05),
                 'stop': data.get('stop', []),
                 'stream': False
             },
@@ -379,7 +379,7 @@ def completion_stream(session_id):
                 json={
                     'prompt': prompt,
                     'n_predict': data.get('max_tokens', 256),
-                    'temperature': data.get('temperature', 0.7),
+                    'temperature': data.get('temperature', 0.05),
                     'stop': data.get('stop', []),
                     'stream': True
                 },

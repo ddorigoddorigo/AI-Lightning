@@ -14,10 +14,11 @@ COPY ../server/ .
 
 # Installa dipendenze Python
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir eventlet
 
 # Configurazione
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Esegui
-CMD ["gunicorn", "--workers", "4", "--threads", "2", "--bind", "0.0.0.0:5000", "app:app"]
+# Esegui con eventlet per supporto WebSocket
+CMD ["gunicorn", "--worker-class", "eventlet", "--workers", "1", "--bind", "0.0.0.0:5000", "app:app"]

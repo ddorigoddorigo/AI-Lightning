@@ -282,3 +282,94 @@ def clear_alert_cooldown(node_id: str, alert_type: str = 'all'):
         del _disk_alerts_sent[node_id]
     if alert_type in ('offline', 'all') and node_id in _offline_alerts_sent:
         del _offline_alerts_sent[node_id]
+
+
+def send_verification_email(to_email: str, username: str, verification_link: str) -> bool:
+    """
+    Send email verification link to new user.
+    
+    Args:
+        to_email: User's email address
+        username: User's username
+        verification_link: URL to verify email
+    
+    Returns:
+        True if sent successfully, False otherwise
+    """
+    subject = "✉️ AI Lightning - Verifica la tua email"
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; background-color: #1a1a2e; color: #e0e0e0; padding: 20px; }}
+            .container {{ max-width: 600px; margin: 0 auto; background-color: #16213e; border-radius: 10px; padding: 30px; }}
+            .header {{ text-align: center; margin-bottom: 20px; }}
+            .logo {{ font-size: 28px; color: #f39c12; }}
+            .welcome-box {{ background-color: #0f3460; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }}
+            .btn {{ display: inline-block; background-color: #f39c12; color: #1a1a2e !important; padding: 15px 40px; 
+                    text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; margin: 20px 0; }}
+            .btn:hover {{ background-color: #e67e22; }}
+            .info {{ background-color: #0f3460; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 12px; }}
+            .footer {{ text-align: center; margin-top: 30px; color: #888; font-size: 12px; }}
+            h1 {{ color: #f39c12; text-align: center; }}
+            .link-text {{ word-break: break-all; color: #888; font-size: 11px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">⚡ AI Lightning</div>
+            </div>
+            
+            <h1>Benvenuto, {username}!</h1>
+            
+            <div class="welcome-box">
+                <p>Grazie per esserti registrato su AI Lightning!</p>
+                <p>Per completare la registrazione e attivare il tuo account, clicca sul pulsante qui sotto:</p>
+                
+                <a href="{verification_link}" class="btn">✅ Verifica Email</a>
+                
+                <p style="color: #888; font-size: 13px; margin-top: 15px;">
+                    Il link scade tra 24 ore.
+                </p>
+            </div>
+            
+            <div class="info">
+                <p>Se il pulsante non funziona, copia e incolla questo link nel tuo browser:</p>
+                <p class="link-text">{verification_link}</p>
+            </div>
+            
+            <p style="text-align: center; color: #888;">
+                Se non hai creato un account su AI Lightning, ignora questa email.
+            </p>
+            
+            <div class="footer">
+                <p>AI Lightning - Decentralized LLM Network</p>
+                <p>Questa email è stata inviata automaticamente. Non rispondere a questo indirizzo.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    text_content = f"""
+    AI Lightning - Verifica la tua email
+    
+    Benvenuto, {username}!
+    
+    Grazie per esserti registrato su AI Lightning!
+    Per completare la registrazione e attivare il tuo account, visita questo link:
+    
+    {verification_link}
+    
+    Il link scade tra 24 ore.
+    
+    Se non hai creato un account su AI Lightning, ignora questa email.
+    
+    ---
+    AI Lightning - Decentralized LLM Network
+    """
+    
+    return send_email(to_email, subject, html_content, text_content)

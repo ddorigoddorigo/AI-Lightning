@@ -409,8 +409,18 @@ def get_system_info():
         'disk': get_disk_info()
     }
     
-    # Calculate total VRAM
-    total_vram = sum(gpu.get('vram_total_mb', 0) for gpu in info['gpus'])
+    # Filter out GPUs with less than 4GB VRAM (4096 MB)
+    # These are not suitable for LLM inference
+    MIN_VRAM_MB = 4096  # 4 GB minimum
+    usable_gpus = [gpu for gpu in info['gpus'] if gpu.get('vram_total_mb', 0) >= MIN_VRAM_MB]
+    
+    # Store both all GPUs and usable GPUs
+    info['all_gpus'] = info['gpus']  # Keep original list for reference
+    info['gpus'] = usable_gpus  # Only usable GPUs for inference
+    info['excluded_gpus'] = [gpu for gpu in info['all_gpus'] if gpu.get('vram_total_mb', 0) < MIN_VRAM_MB]
+    
+    # Calculate total VRAM from usable GPUs only
+    total_vram = sum(gpu.get('vram_total_mb', 0) for gpu in usable_gpus)
     info['total_vram_mb'] = total_vram
     
     # Determine maximum model capacity (approximate)
@@ -442,7 +452,7 @@ def format_system_info(info):
     ]
     
     if info['gpus']:
-        lines.append(f"GPU ({len(info['gpus'])} detected):")
+        lines.append(f"GPU ({len(info['gpus'])} usable for inference):")
         for gpu in info['gpus']:
             vram_gb = gpu.get('vram_total_mb', 0) / 1024
             lines.append(f"  [{gpu['index']}] {gpu['name']}")
@@ -451,8 +461,17 @@ def format_system_info(info):
     else:
         lines.append("GPU: No GPU detected (CPU will be used)")
     
+    # Show excluded GPUs
+    excluded = info.get('excluded_gpus', [])
+    if excluded:
+        lines.append(f"")
+        lines.append(f"Excluded GPUs (less than 4GB VRAM):")
+        for gpu in excluded:
+            vram_gb = gpu.get('vram_total_mb', 0) / 1024
+            lines.append(f"  [{gpu['index']}] {gpu['name']} ({vram_gb:.1f} GB)")
+    
     lines.append(f"")
-    lines.append(f"Total VRAM: {info['total_vram_mb']} MB")
+    lines.append(f"Total usable VRAM: {info['total_vram_mb']} MB")
     lines.append(f"Max estimated model: ~{info['max_model_params_b']}B parameters (Q4)")
     
     return '\n'.join(lines)
